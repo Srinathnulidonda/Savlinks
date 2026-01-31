@@ -40,11 +40,8 @@ class RedisService:
             return
         
         try:
-            # Parse URL to determine SSL requirement
-            parsed = urlparse(redis_url)
-            use_ssl = parsed.scheme == "rediss"
-            
-            # Connection options
+            # For redis-py 5.x+, SSL is handled automatically from URL scheme (rediss://)
+            # No need to pass ssl parameter separately
             connection_kwargs = {
                 "decode_responses": True,
                 "socket_timeout": 10,
@@ -52,11 +49,6 @@ class RedisService:
                 "retry_on_timeout": True,
                 "health_check_interval": 30,
             }
-            
-            # Add SSL if using rediss://
-            if use_ssl:
-                connection_kwargs["ssl"] = True
-                connection_kwargs["ssl_cert_reqs"] = None  # For Upstash
             
             RedisService._instance = redis.from_url(
                 redis_url,
@@ -68,10 +60,10 @@ class RedisService:
             logger.info("✅ Redis connection established successfully")
             
         except redis.ConnectionError as e:
-            logger.error(f"❌ Redis connection failed: {e}")
+            logger.warning(f"⚠️ Redis connection failed: {e}")
             RedisService._instance = None
         except Exception as e:
-            logger.error(f"❌ Redis initialization error: {e}")
+            logger.warning(f"⚠️ Redis initialization error: {e}")
             RedisService._instance = None
     
     def _is_available(self) -> bool:
@@ -178,7 +170,7 @@ class RedisService:
     def blacklist_token(self, jti: str, ttl: Optional[int] = None) -> bool:
         """Add JWT token to blacklist."""
         if not self._is_available():
-            logger.warning("Redis unavailable - token blacklist disabled")
+            logger.debug(f"Redis unavailable - token blacklist disabled")
             return False
             
         try:
@@ -197,7 +189,6 @@ class RedisService:
     def is_token_blacklisted(self, jti: str) -> bool:
         """Check if JWT token is blacklisted."""
         if not self._is_available():
-            # If Redis is unavailable, allow tokens (fail open)
             return False
             
         try:
@@ -212,7 +203,7 @@ class RedisService:
     def store_reset_token(self, token: str, user_id: str, ttl: Optional[int] = None) -> bool:
         """Store password reset token."""
         if not self._is_available():
-            logger.warning("Redis unavailable - using database for reset tokens")
+            logger.debug("Redis unavailable - password reset tokens not cached")
             return False
             
         try:
@@ -293,11 +284,9 @@ class RedisService:
                 self.client.ping()
                 stats["connected"] = True
                 
-                # Get queue sizes
                 stats["click_queue_size"] = self.client.llen("cinbrainlinks:click_queue")
                 stats["email_queue_size"] = self.client.llen("cinbrainlinks:email_queue")
                 
-                # Count cached links
                 link_keys = self.client.keys("cinbrainlinks:link:*")
                 stats["cached_links"] = len(link_keys)
                 

@@ -2,7 +2,7 @@
 
 """
 Configuration classes for different environments.
-Optimized for Railway deployment with Supabase or Railway PostgreSQL.
+Optimized for Railway deployment with proper database URL handling.
 """
 
 import os
@@ -35,13 +35,6 @@ def get_database_url():
         # Fix postgres:// to postgresql:// (Railway/Heroku compatibility)
         if database_url.startswith("postgres://"):
             database_url = database_url.replace("postgres://", "postgresql://", 1)
-        
-        # For Supabase, ensure we're using the pooler connection
-        # Direct connections often fail from external services
-        if "supabase.co" in database_url and "pooler.supabase.com" not in database_url:
-            print("⚠️  WARNING: Using Supabase direct connection.")
-            print("   Consider using the Supavisor pooler connection instead:")
-            print("   Go to Supabase Dashboard → Settings → Database → Connection String → Session Mode")
     
     return database_url
 
@@ -80,7 +73,6 @@ class Config:
         "pool_timeout": 30,
         "connect_args": {
             "connect_timeout": 10,
-            "options": "-c statement_timeout=30000"
         }
     }
     
@@ -183,7 +175,6 @@ class ProductionConfig(Config):
         "pool_timeout": 30,
         "connect_args": {
             "connect_timeout": 10,
-            "options": "-c statement_timeout=30000"
         }
     }
     

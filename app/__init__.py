@@ -93,7 +93,7 @@ def create_app(config_name: str = None) -> Flask:
             else:
                 health_status["redis"] = "not configured"
         except Exception as e:
-            health_status["redis"] = f"error: {str(e)[:100]}"
+            health_status["redis"] = f"not available"
         
         status_code = 200 if health_status["status"] == "healthy" else 503
         return jsonify(health_status), status_code
@@ -106,7 +106,12 @@ def create_app(config_name: str = None) -> Flask:
             "name": "CinBrainLinks API",
             "version": "1.0.0",
             "status": "running",
-            "health": "/health"
+            "environment": config_name,
+            "health": "/health",
+            "docs": {
+                "authentication": "/api/auth",
+                "links": "/api/links"
+            }
         }), 200
     
     # Initialize database tables after app is fully configured
@@ -152,33 +157,29 @@ def _init_database(app: Flask) -> None:
         app.logger.error("❌ DATABASE_URL not configured!")
         return
     
-    max_retries = 3
-    retry_delay = 2
-    
-    for attempt in range(max_retries):
-        try:
-            # Test connection first
-            db.session.execute(db.text("SELECT 1"))
-            db.session.commit()
-            app.logger.info("✅ Database connection successful")
-            
-            # Create tables
+    try:
+        # Test connection first
+        db.session.execute(db.text("SELECT 1"))
+        db.session.commit()
+        app.logger.info("✅ Database connection successful")
+        
+        # Create tables (with proper error handling for existing tables)
+        from sqlalchemy import inspect
+        inspector = inspect(db.engine)
+        existing_tables = inspector.get_table_names()
+        
+        if not existing_tables or len(existing_tables) < 2:
+            # Tables don't exist, create them
             db.create_all()
-            app.logger.info("✅ Database tables created/verified")
-            return
+            app.logger.info("✅ Database tables created successfully")
+        else:
+            # Tables already exist
+            app.logger.info("✅ Database tables verified (already exist)")
             
-        except Exception as e:
-            app.logger.warning(f"⚠️ Database connection attempt {attempt + 1}/{max_retries} failed: {e}")
-            
-            if attempt < max_retries - 1:
-                import time
-                time.sleep(retry_delay)
-                retry_delay *= 2
-            else:
-                app.logger.error(f"❌ Database initialization failed after {max_retries} attempts")
-                app.logger.error(f"   Error: {str(e)[:200]}")
-                app.logger.error("   The app will start but database operations will fail.")
-                app.logger.error("   Please check your DATABASE_URL configuration.")
+    except Exception as e:
+        app.logger.error(f"❌ Database initialization error: {str(e)[:200]}")
+        app.logger.error("   The app will start but database operations may fail.")
+        app.logger.error("   Please check your DATABASE_URL configuration.")
 
 
 def _register_blueprints(app: Flask) -> None:
@@ -241,7 +242,7 @@ def _register_error_handlers(app: Flask) -> None:
     def service_unavailable(error):
         return jsonify({
             "error": "Service Unavailable",
-            "message": "Database connection failed. Please try again later."
+            "message": "Service temporarily unavailable"
         }), 503
 
 
