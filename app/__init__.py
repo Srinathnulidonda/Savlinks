@@ -13,6 +13,8 @@ from flask_cors import CORS
 from app.config import config_by_name
 from app.extensions import db, jwt, migrate, limiter
 
+logger = logging.getLogger(__name__)
+
 
 def create_app(config_name: str = None) -> Flask:
     """Application factory pattern for Flask app creation."""
@@ -33,7 +35,7 @@ def create_app(config_name: str = None) -> Flask:
     # Log startup info
     _log_startup_info(app, config_name)
     
-    # Initialize extensions
+    # Initialize extensions (without creating tables)
     _init_extensions(app)
     
     # Register blueprints
@@ -59,7 +61,7 @@ def create_app(config_name: str = None) -> Flask:
             "allow_headers": ["Content-Type", "Authorization"],
             "supports_credentials": True
         },
-        r"/*": {"origins": "*"}  # For redirect endpoint
+        r"/*": {"origins": "*"}
     })
     
     # Health check endpoint
@@ -75,22 +77,23 @@ def create_app(config_name: str = None) -> Flask:
         # Check database connection
         try:
             db.session.execute(db.text("SELECT 1"))
+            db.session.commit()
             health_status["database"] = "connected"
         except Exception as e:
-            health_status["database"] = f"error: {str(e)}"
+            health_status["database"] = f"error: {str(e)[:100]}"
             health_status["status"] = "degraded"
         
         # Check Redis connection
         try:
             from app.services.redis_service import RedisService
-            redis = RedisService()
-            if redis.client:
-                redis.client.ping()
+            redis_service = RedisService()
+            if redis_service.client:
+                redis_service.client.ping()
                 health_status["redis"] = "connected"
             else:
                 health_status["redis"] = "not configured"
         except Exception as e:
-            health_status["redis"] = f"error: {str(e)}"
+            health_status["redis"] = f"error: {str(e)[:100]}"
         
         status_code = 200 if health_status["status"] == "healthy" else 503
         return jsonify(health_status), status_code
@@ -103,29 +106,35 @@ def create_app(config_name: str = None) -> Flask:
             "name": "CinBrainLinks API",
             "version": "1.0.0",
             "status": "running",
-            "docs": "/api/docs" if app.config["DEBUG"] else None,
             "health": "/health"
         }), 200
+    
+    # Initialize database tables after app is fully configured
+    with app.app_context():
+        _init_database(app)
     
     return app
 
 
 def _log_startup_info(app: Flask, config_name: str) -> None:
     """Log startup information."""
+    base_url = app.config.get('BASE_URL', 'Not set')
+    is_railway = app.config.get('IS_RAILWAY', False)
+    
     print(f"""
 ╔═══════════════════════════════════════════════════════════════╗
 ║                       CinBrainLinks                            ║
 ║              Production-Grade URL Shortener                    ║
 ╠═══════════════════════════════════════════════════════════════╣
 ║  Environment: {config_name:<48}║
-║  Railway:     {str(app.config.get('IS_RAILWAY', False)):<48}║
-║  Base URL:    {app.config.get('BASE_URL', 'Not set')[:48]:<48}║
+║  Railway:     {str(is_railway):<48}║
+║  Base URL:    {str(base_url)[:48]:<48}║
 ╚═══════════════════════════════════════════════════════════════╝
     """)
 
 
 def _init_extensions(app: Flask) -> None:
-    """Initialize Flask extensions."""
+    """Initialize Flask extensions without creating tables."""
     db.init_app(app)
     jwt.init_app(app)
     migrate.init_app(app, db)
@@ -135,15 +144,41 @@ def _init_extensions(app: Flask) -> None:
         limiter.init_app(app)
     except Exception as e:
         app.logger.warning(f"Rate limiter initialization warning: {e}")
+
+
+def _init_database(app: Flask) -> None:
+    """Initialize database tables with error handling."""
+    if not app.config.get("SQLALCHEMY_DATABASE_URI"):
+        app.logger.error("❌ DATABASE_URL not configured!")
+        return
     
-    # Create tables within app context
-    with app.app_context():
+    max_retries = 3
+    retry_delay = 2
+    
+    for attempt in range(max_retries):
         try:
+            # Test connection first
+            db.session.execute(db.text("SELECT 1"))
+            db.session.commit()
+            app.logger.info("✅ Database connection successful")
+            
+            # Create tables
             db.create_all()
             app.logger.info("✅ Database tables created/verified")
+            return
+            
         except Exception as e:
-            app.logger.error(f"❌ Database initialization error: {e}")
-            raise
+            app.logger.warning(f"⚠️ Database connection attempt {attempt + 1}/{max_retries} failed: {e}")
+            
+            if attempt < max_retries - 1:
+                import time
+                time.sleep(retry_delay)
+                retry_delay *= 2
+            else:
+                app.logger.error(f"❌ Database initialization failed after {max_retries} attempts")
+                app.logger.error(f"   Error: {str(e)[:200]}")
+                app.logger.error("   The app will start but database operations will fail.")
+                app.logger.error("   Please check your DATABASE_URL configuration.")
 
 
 def _register_blueprints(app: Flask) -> None:
@@ -154,7 +189,7 @@ def _register_blueprints(app: Flask) -> None:
     
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(links_bp, url_prefix="/api/links")
-    app.register_blueprint(redirect_bp)  # Root level for short URLs
+    app.register_blueprint(redirect_bp)
 
 
 def _register_error_handlers(app: Flask) -> None:
@@ -201,13 +236,19 @@ def _register_error_handlers(app: Flask) -> None:
             "error": "Internal Server Error",
             "message": "An unexpected error occurred"
         }), 500
+    
+    @app.errorhandler(503)
+    def service_unavailable(error):
+        return jsonify({
+            "error": "Service Unavailable",
+            "message": "Database connection failed. Please try again later."
+        }), 503
 
 
 def _setup_logging(app: Flask) -> None:
     """Configure application logging for Railway."""
     log_level = logging.INFO if not app.config["DEBUG"] else logging.DEBUG
     
-    # Configure root logger
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -221,17 +262,16 @@ def _setup_logging(app: Flask) -> None:
 
 def _setup_jwt_callbacks(app: Flask) -> None:
     """Setup JWT-related callbacks."""
-    from app.services.redis_service import RedisService
     
     @jwt.token_in_blocklist_loader
     def check_if_token_revoked(jwt_header, jwt_payload):
         """Check if JWT token has been revoked."""
         try:
+            from app.services.redis_service import RedisService
             jti = jwt_payload["jti"]
             redis_service = RedisService()
             return redis_service.is_token_blacklisted(jti)
         except Exception:
-            # If Redis is unavailable, don't block valid tokens
             return False
     
     @jwt.expired_token_loader
