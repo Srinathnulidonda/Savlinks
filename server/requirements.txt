@@ -1,40 +1,23 @@
-# Core Framework
-Flask==3.0.0
-Flask-RESTful==0.3.10
-Flask-JWT-Extended==4.6.0
-Flask-CORS==4.0.0
-Flask-Migrate==4.0.5
-Flask-Limiter==3.5.0
-
-# Database
-Flask-SQLAlchemy==3.1.1
-SQLAlchemy==2.0.23
-psycopg2-binary==2.9.9
-alembic==1.13.0
-
-# Redis
-redis==5.0.1
-
-# Security
-Werkzeug==3.0.1
-PyJWT==2.8.0
-itsdangerous==2.1.2
-
-# HTTP Requests (for Brevo API)
-requests==2.31.0
-
-# Validation & Utils
-email-validator==2.1.0
-python-dotenv==1.0.0
-validators==0.22.0
-
-# QR Code
-qrcode[pil]==7.4.2
-Pillow==10.1.0
-
-# Production Server
-gunicorn==21.2.0
-gevent==23.9.1
-
-# Monitoring (optional but recommended)
-sentry-sdk[flask]==1.38.0
+Flask
+Flask-RESTful
+Flask-JWT-Extended
+Flask-CORS
+Flask-Migrate
+Flask-Limiter
+Flask-SQLAlchemy
+SQLAlchemy
+psycopg2-binary
+alembic
+redis
+Werkzeug
+PyJWT
+itsdangerous
+requests
+email-validator
+python-dotenv
+validators
+qrcode[pil]
+Pillow
+gunicorn
+gevent
+sentry-sdk[flask]
