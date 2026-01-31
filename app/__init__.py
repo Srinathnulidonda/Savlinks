@@ -96,8 +96,8 @@ def create_app(config_name: str = None) -> Flask:
             health_status["redis"] = f"not available"
         
         # Check rate limiter storage
-        storage_url = app.config.get("RATELIMIT_STORAGE_URL", "memory://")
-        if storage_url.startswith("redis"):
+        storage_uri = app.config.get("RATELIMIT_STORAGE_URI", "memory://")
+        if storage_uri and storage_uri.startswith("redis"):
             health_status["rate_limiter"] = "redis"
         else:
             health_status["rate_limiter"] = "memory"
@@ -155,31 +155,22 @@ def _init_extensions(app: Flask) -> None:
     jwt.init_app(app)
     migrate.init_app(app, db)
     
-    # Configure rate limiter with proper storage backend
-    redis_url = app.config.get("REDIS_URL")
+    # Log rate limiter storage configuration
+    storage_uri = app.config.get("RATELIMIT_STORAGE_URI", "memory://")
     
-    if redis_url:
-        # Use Redis for rate limiting
-        app.config["RATELIMIT_STORAGE_URL"] = redis_url
-        app.config["RATELIMIT_STORAGE_OPTIONS"] = {
-            "socket_connect_timeout": 5,
-            "socket_timeout": 5,
-        }
-        app.logger.info("✅ Rate limiter configured with Redis backend")
+    if storage_uri and storage_uri != "memory://" and storage_uri.startswith("redis"):
+        app.logger.info(f"✅ Rate limiter configured with Redis backend")
     else:
-        # Fallback to memory (not recommended for production)
-        app.config["RATELIMIT_STORAGE_URL"] = "memory://"
         app.logger.warning("⚠️ Rate limiter using in-memory storage (Redis not configured)")
     
-    # Initialize limiter with configured storage
+    # Initialize limiter - it will read RATELIMIT_STORAGE_URI from config automatically
     try:
         limiter.init_app(app)
-        storage_type = "Redis" if redis_url else "Memory"
-        app.logger.info(f"✅ Rate limiter initialized ({storage_type})")
+        app.logger.info(f"✅ Rate limiter initialized successfully")
     except Exception as e:
         app.logger.error(f"❌ Rate limiter initialization failed: {e}")
-        # Try with memory fallback
-        app.config["RATELIMIT_STORAGE_URL"] = "memory://"
+        # Fallback to memory
+        app.config["RATELIMIT_STORAGE_URI"] = "memory://"
         try:
             limiter.init_app(app)
             app.logger.warning("⚠️ Rate limiter fell back to memory storage")

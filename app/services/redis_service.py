@@ -40,8 +40,11 @@ class RedisService:
             return
         
         try:
-            # For redis-py 5.x+, SSL is handled automatically from URL scheme (rediss://)
-            # No need to pass ssl parameter separately
+            # Upstash requires SSL - ensure rediss:// scheme
+            if "upstash.io" in redis_url and redis_url.startswith("redis://"):
+                redis_url = redis_url.replace("redis://", "rediss://", 1)
+                logger.info("Converted Upstash URL to use SSL (rediss://)")
+            
             connection_kwargs = {
                 "decode_responses": True,
                 "socket_timeout": 10,

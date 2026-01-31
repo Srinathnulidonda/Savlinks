@@ -20,8 +20,6 @@ jwt = JWTManager()
 # Database migrations
 migrate = Migrate()
 
-# Rate limiter
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=["200 per day", "50 per hour"]
-)
+# Rate limiter - storage will be configured via app.config["RATELIMIT_STORAGE_URI"]
+# Do NOT set default_limits here - let init_app pick up from config
+limiter = Limiter(key_func=get_remote_address)

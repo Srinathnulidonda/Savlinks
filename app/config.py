@@ -40,19 +40,24 @@ def get_database_url():
 
 
 def get_redis_url():
-    """Get Redis URL with Railway/Upstash compatibility."""
+    """Get Redis URL with Railway/Upstash compatibility and SSL handling."""
     redis_url = (
         os.environ.get("REDIS_URL") or
         os.environ.get("REDIS_PRIVATE_URL") or
         os.environ.get("UPSTASH_REDIS_URL")
     )
     
-    # Log for debugging (will show in Railway logs)
     if redis_url:
-        # Mask password for logging
+        # Upstash requires SSL - ensure rediss:// scheme
+        if "upstash.io" in redis_url and redis_url.startswith("redis://"):
+            redis_url = redis_url.replace("redis://", "rediss://", 1)
+            print(f"[Config] Converted Upstash URL to use SSL (rediss://)")
+        
+        # Log for debugging (mask password)
         if '@' in redis_url:
             masked = redis_url.split('@')[-1]
-            print(f"[Config] Redis URL found: ...@{masked}")
+            scheme = redis_url.split('://')[0] if '://' in redis_url else 'unknown'
+            print(f"[Config] Redis URL found: {scheme}://...@{masked}")
         else:
             print(f"[Config] Redis URL found (local)")
     else:
@@ -99,8 +104,8 @@ class Config:
     # Redis - Get URL first
     REDIS_URL = get_redis_url()
     
-    # Rate limiting - Use Redis if available, otherwise memory
-    RATELIMIT_STORAGE_URL = REDIS_URL if REDIS_URL else "memory://"
+    # Rate limiting - Flask-Limiter uses RATELIMIT_STORAGE_URI (not URL!)
+    RATELIMIT_STORAGE_URI = REDIS_URL if REDIS_URL else "memory://"
     RATELIMIT_DEFAULT = "200 per hour"
     RATELIMIT_HEADERS_ENABLED = True
     RATELIMIT_STRATEGY = "fixed-window"
@@ -174,7 +179,7 @@ class TestingConfig(Config):
     TESTING = True
     FLASK_ENV = "testing"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
-    RATELIMIT_STORAGE_URL = "memory://"
+    RATELIMIT_STORAGE_URI = "memory://"
 
 
 class ProductionConfig(Config):
