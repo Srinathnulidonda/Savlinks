@@ -432,7 +432,7 @@ class BrevoEmailService:
         self.sender_name = current_app.config.get("BREVO_SENDER_NAME", "CinBrainLinks")
         self.reply_to_email = current_app.config.get("REPLY_TO_EMAIL", self.sender_email)
         
-        self.frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
+        self.frontend_url = current_app.config.get("FRONTEND_URL", "http://cinebrainlinks.vercel.app")
         self.base_url = current_app.config.get("BASE_URL", "http://localhost:5000")
         self.environment = current_app.config.get("FLASK_ENV", "development")
         

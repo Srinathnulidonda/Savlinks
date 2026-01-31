@@ -41,11 +41,24 @@ def get_database_url():
 
 def get_redis_url():
     """Get Redis URL with Railway/Upstash compatibility."""
-    return (
+    redis_url = (
         os.environ.get("REDIS_URL") or
         os.environ.get("REDIS_PRIVATE_URL") or
         os.environ.get("UPSTASH_REDIS_URL")
     )
+    
+    # Log for debugging (will show in Railway logs)
+    if redis_url:
+        # Mask password for logging
+        if '@' in redis_url:
+            masked = redis_url.split('@')[-1]
+            print(f"[Config] Redis URL found: ...@{masked}")
+        else:
+            print(f"[Config] Redis URL found (local)")
+    else:
+        print("[Config] No Redis URL configured")
+    
+    return redis_url
 
 
 class Config:
@@ -83,8 +96,15 @@ class Config:
     JWT_BLACKLIST_ENABLED = True
     JWT_BLACKLIST_TOKEN_CHECKS = ["access", "refresh"]
     
-    # Redis
+    # Redis - Get URL first
     REDIS_URL = get_redis_url()
+    
+    # Rate limiting - Use Redis if available, otherwise memory
+    RATELIMIT_STORAGE_URL = REDIS_URL if REDIS_URL else "memory://"
+    RATELIMIT_DEFAULT = "200 per hour"
+    RATELIMIT_HEADERS_ENABLED = True
+    RATELIMIT_STRATEGY = "fixed-window"
+    RATELIMIT_KEY_PREFIX = "cinbrainlinks_rl"
     
     # Cache TTL settings (in seconds)
     CACHE_TTL_LINK = 3600
@@ -111,12 +131,6 @@ class Config:
     
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
     BACKEND_URL = BASE_URL
-    
-    # Rate limiting
-    RATELIMIT_STORAGE_URL = REDIS_URL if REDIS_URL else "memory://"
-    RATELIMIT_DEFAULT = "200 per hour"
-    RATELIMIT_HEADERS_ENABLED = True
-    RATELIMIT_STRATEGY = "fixed-window"
     
     # CORS
     CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
@@ -160,6 +174,7 @@ class TestingConfig(Config):
     TESTING = True
     FLASK_ENV = "testing"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    RATELIMIT_STORAGE_URL = "memory://"
 
 
 class ProductionConfig(Config):

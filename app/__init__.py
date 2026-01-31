@@ -35,7 +35,7 @@ def create_app(config_name: str = None) -> Flask:
     # Log startup info
     _log_startup_info(app, config_name)
     
-    # Initialize extensions (without creating tables)
+    # Initialize extensions
     _init_extensions(app)
     
     # Register blueprints
@@ -95,6 +95,13 @@ def create_app(config_name: str = None) -> Flask:
         except Exception as e:
             health_status["redis"] = f"not available"
         
+        # Check rate limiter storage
+        storage_url = app.config.get("RATELIMIT_STORAGE_URL", "memory://")
+        if storage_url.startswith("redis"):
+            health_status["rate_limiter"] = "redis"
+        else:
+            health_status["rate_limiter"] = "memory"
+        
         status_code = 200 if health_status["status"] == "healthy" else 503
         return jsonify(health_status), status_code
     
@@ -125,6 +132,9 @@ def _log_startup_info(app: Flask, config_name: str) -> None:
     """Log startup information."""
     base_url = app.config.get('BASE_URL', 'Not set')
     is_railway = app.config.get('IS_RAILWAY', False)
+    redis_url = app.config.get('REDIS_URL')
+    
+    redis_status = "configured" if redis_url else "not configured"
     
     print(f"""
 ╔═══════════════════════════════════════════════════════════════╗
@@ -134,6 +144,7 @@ def _log_startup_info(app: Flask, config_name: str) -> None:
 ║  Environment: {config_name:<48}║
 ║  Railway:     {str(is_railway):<48}║
 ║  Base URL:    {str(base_url)[:48]:<48}║
+║  Redis:       {redis_status:<48}║
 ╚═══════════════════════════════════════════════════════════════╝
     """)
 
@@ -144,11 +155,36 @@ def _init_extensions(app: Flask) -> None:
     jwt.init_app(app)
     migrate.init_app(app, db)
     
-    # Initialize rate limiter with fallback
+    # Configure rate limiter with proper storage backend
+    redis_url = app.config.get("REDIS_URL")
+    
+    if redis_url:
+        # Use Redis for rate limiting
+        app.config["RATELIMIT_STORAGE_URL"] = redis_url
+        app.config["RATELIMIT_STORAGE_OPTIONS"] = {
+            "socket_connect_timeout": 5,
+            "socket_timeout": 5,
+        }
+        app.logger.info("✅ Rate limiter configured with Redis backend")
+    else:
+        # Fallback to memory (not recommended for production)
+        app.config["RATELIMIT_STORAGE_URL"] = "memory://"
+        app.logger.warning("⚠️ Rate limiter using in-memory storage (Redis not configured)")
+    
+    # Initialize limiter with configured storage
     try:
         limiter.init_app(app)
+        storage_type = "Redis" if redis_url else "Memory"
+        app.logger.info(f"✅ Rate limiter initialized ({storage_type})")
     except Exception as e:
-        app.logger.warning(f"Rate limiter initialization warning: {e}")
+        app.logger.error(f"❌ Rate limiter initialization failed: {e}")
+        # Try with memory fallback
+        app.config["RATELIMIT_STORAGE_URL"] = "memory://"
+        try:
+            limiter.init_app(app)
+            app.logger.warning("⚠️ Rate limiter fell back to memory storage")
+        except Exception as e2:
+            app.logger.error(f"❌ Rate limiter completely failed: {e2}")
 
 
 def _init_database(app: Flask) -> None:
