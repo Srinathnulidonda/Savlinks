@@ -28,18 +28,18 @@ class ActivityLog(db.Model):
 
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    
+
     activity_type = db.Column(db.Enum(ActivityType), nullable=False, index=True)
-    
+
     resource_type = db.Column(db.String(50), nullable=False)
     resource_id = db.Column(db.String(36), nullable=True, index=True)
     resource_title = db.Column(db.String(255), nullable=True)
-    
-    metadata = db.Column(db.JSON, nullable=True)
-    
+
+    extra_data = db.Column(db.JSON, nullable=True)  # RENAMED from 'metadata'
+
     ip_address = db.Column(db.String(45), nullable=True)
     user_agent = db.Column(db.String(255), nullable=True)
-    
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     __table_args__ = (
@@ -54,7 +54,7 @@ class ActivityLog(db.Model):
         resource_type: str,
         resource_id: Optional[str] = None,
         resource_title: Optional[str] = None,
-        metadata: Optional[dict] = None,
+        extra_data: Optional[dict] = None,  # RENAMED
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
     ):
@@ -63,7 +63,7 @@ class ActivityLog(db.Model):
         self.resource_type = resource_type
         self.resource_id = resource_id
         self.resource_title = resource_title
-        self.metadata = metadata
+        self.extra_data = extra_data  # RENAMED
         self.ip_address = ip_address
         self.user_agent = user_agent
 
@@ -74,7 +74,7 @@ class ActivityLog(db.Model):
             "resource_type": self.resource_type,
             "resource_id": self.resource_id,
             "resource_title": self.resource_title,
-            "metadata": self.metadata,
+            "metadata": self.extra_data,  # Keep 'metadata' in API response for compatibility
             "created_at": self.created_at.isoformat(),
         }
 

@@ -22,7 +22,7 @@ class ActivityService:
         resource_type: str,
         resource_id: Optional[str] = None,
         resource_title: Optional[str] = None,
-        metadata: Optional[dict] = None,
+        extra_data: Optional[dict] = None,
         async_log: bool = True
     ) -> Optional[ActivityLog]:
 
@@ -44,7 +44,7 @@ class ActivityService:
                 target=ActivityService._log_async,
                 args=(
                     app, user_id, activity_type, resource_type,
-                    resource_id, resource_title, metadata,
+                    resource_id, resource_title, extra_data,
                     ip_address, user_agent
                 ),
                 daemon=True
@@ -53,7 +53,7 @@ class ActivityService:
         else:
             return ActivityService._create_log(
                 user_id, activity_type, resource_type,
-                resource_id, resource_title, metadata,
+                resource_id, resource_title, extra_data,
                 ip_address, user_agent
             )
 
@@ -65,7 +65,7 @@ class ActivityService:
         resource_type: str,
         resource_id: Optional[str],
         resource_title: Optional[str],
-        metadata: Optional[dict],
+        extra_data: Optional[dict],
         ip_address: Optional[str],
         user_agent: Optional[str]
     ) -> None:
@@ -73,7 +73,7 @@ class ActivityService:
             try:
                 ActivityService._create_log(
                     user_id, activity_type, resource_type,
-                    resource_id, resource_title, metadata,
+                    resource_id, resource_title, extra_data,
                     ip_address, user_agent
                 )
             except Exception as e:
@@ -86,7 +86,7 @@ class ActivityService:
         resource_type: str,
         resource_id: Optional[str],
         resource_title: Optional[str],
-        metadata: Optional[dict],
+        extra_data: Optional[dict],
         ip_address: Optional[str],
         user_agent: Optional[str]
     ) -> ActivityLog:
@@ -96,7 +96,7 @@ class ActivityService:
             resource_type=resource_type,
             resource_id=resource_id,
             resource_title=resource_title,
-            metadata=metadata,
+            extra_data=extra_data,
             ip_address=ip_address,
             user_agent=user_agent
         )
