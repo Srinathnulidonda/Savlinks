@@ -1,191 +1,436 @@
-// frontend/src/pages/auth/Register.jsx
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+// src/pages/auth/Register.jsx
+import { useState, useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { motion } from 'framer-motion'
+import { AuthService } from '../../utils/auth'
 
 export default function Register() {
-    const [name, setName] = useState('');
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
+    const [formData, setFormData] = useState({
+        name: '',
+        email: '',
+        password: '',
+        confirmPassword: ''
+    })
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState('')
+    const [showPassword, setShowPassword] = useState(false)
+    const [passwordValidation, setPasswordValidation] = useState({
+        minLength: false,
+        hasUpper: false,
+        hasLower: false,
+        hasNumber: false,
+        hasSpecial: false
+    })
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        setIsLoading(true);
-        // TODO: Implement registration logic
-        setTimeout(() => setIsLoading(false), 1000);
-    };
+    const navigate = useNavigate()
+
+    useEffect(() => {
+        // Check if user is already authenticated
+        const checkAuth = async () => {
+            const { session } = await AuthService.getSession()
+            if (session) {
+                navigate('/dashboard', { replace: true })
+            }
+        }
+        checkAuth()
+    }, [navigate])
+
+    useEffect(() => {
+        // Validate password in real-time
+        const password = formData.password
+        setPasswordValidation({
+            minLength: password.length >= 8,
+            hasUpper: /[A-Z]/.test(password),
+            hasLower: /[a-z]/.test(password),
+            hasNumber: /\d/.test(password),
+            hasSpecial: /[!@#$%^&*(),.?":{}|<>\-_=+\[\]\\;'`~]/.test(password)
+        })
+    }, [formData.password])
+
+    const handleInputChange = (e) => {
+        setFormData(prev => ({
+            ...prev,
+            [e.target.name]: e.target.value
+        }))
+        setError('')
+    }
+
+    const isPasswordValid = Object.values(passwordValidation).every(Boolean)
+    const passwordsMatch = formData.password === formData.confirmPassword
+
+    const handleEmailRegister = async (e) => {
+        e.preventDefault()
+        setLoading(true)
+        setError('')
+
+        // Validation
+        if (!formData.name.trim()) {
+            setError('Name is required')
+            setLoading(false)
+            return
+        }
+
+        if (!isPasswordValid) {
+            setError('Please ensure your password meets all requirements')
+            setLoading(false)
+            return
+        }
+
+        if (!passwordsMatch) {
+            setError('Passwords do not match')
+            setLoading(false)
+            return
+        }
+
+        try {
+            const { data, error: authError } = await AuthService.register(
+                formData.email,
+                formData.password,
+                { name: formData.name }
+            )
+
+            if (authError) {
+                throw new Error(authError.message)
+            }
+
+            if (data?.session) {
+                // User signed up and confirmed automatically
+                const { error: backendError } = await AuthService.verifyWithBackend()
+                if (backendError) {
+                    console.warn('Backend verification failed:', backendError)
+                }
+                navigate('/dashboard', { replace: true })
+            } else if (data?.user && !data?.session) {
+                // Email confirmation required
+                navigate('/verify-email', {
+                    state: { email: formData.email }
+                })
+            }
+        } catch (err) {
+            setError(err.message || 'Registration failed')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const handleGoogleRegister = async () => {
+        setLoading(true)
+        setError('')
+
+        try {
+            const { error } = await AuthService.loginWithGoogle()
+            if (error) {
+                throw new Error(error.message)
+            }
+        } catch (err) {
+            setError(err.message || 'Google sign-up failed')
+            setLoading(false)
+        }
+    }
 
     return (
-        <div className="flex min-h-screen">
-            {/* Left Panel - Visual */}
-            <div className="relative hidden lg:block lg:w-1/2">
-                <div className="absolute inset-0 bg-gradient-to-br from-savlink-primary to-savlink-primary-light">
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.15),transparent_50%)]" />
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_80%,rgba(255,255,255,0.1),transparent_50%)]" />
+        <div className="min-h-screen bg-black flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+            {/* Background Effects */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <div className="absolute left-1/3 top-1/4 -translate-x-1/2 -translate-y-1/2">
+                    <div className="h-[400px] w-[400px] rounded-full bg-primary/10 blur-[128px]" />
                 </div>
-                <div className="relative flex h-full flex-col items-center justify-center p-12">
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.3, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-                        className="text-center"
-                    >
-                        <div className="mb-6 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm">
-                            <svg
-                                className="h-8 w-8 text-white"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                                strokeWidth={1.5}
-                            >
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"
-                                />
-                            </svg>
-                        </div>
-                        <h2 className="text-3xl font-bold text-white">
-                            Start your collection
-                        </h2>
-                        <p className="mt-3 max-w-sm text-lg text-white/80">
-                            Join thousands of users who trust Savlink with their important links.
-                        </p>
-                    </motion.div>
+                <div className="absolute right-1/3 bottom-1/3">
+                    <div className="h-[300px] w-[300px] rounded-full bg-primary/5 blur-[96px]" />
                 </div>
             </div>
 
-            {/* Right Panel - Form */}
-            <div className="flex w-full flex-col justify-center px-4 py-12 sm:px-6 lg:w-1/2 lg:px-20 xl:px-24">
+            <div className="relative sm:mx-auto sm:w-full sm:max-w-md">
+                {/* Header */}
                 <motion.div
-                    initial={{ opacity: 0, x: 20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-                    className="mx-auto w-full max-w-sm"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
+                    className="text-center"
                 >
-                    <div className="mb-10">
-                        <Link
-                            to="/"
-                            className="text-2xl font-semibold text-gray-900 transition-colors hover:text-savlink-primary"
-                        >
-                            Savlink
-                        </Link>
-                        <h1 className="mt-6 text-2xl font-bold text-gray-900 sm:text-3xl">
-                            Create your account
-                        </h1>
-                        <p className="mt-2 text-gray-600">
-                            Start saving your important links today.
-                        </p>
-                    </div>
-
-                    <form onSubmit={handleSubmit} className="space-y-6">
-                        <div>
-                            <label htmlFor="name" className="label">
-                                Name
-                            </label>
-                            <input
-                                id="name"
-                                name="name"
-                                type="text"
-                                autoComplete="name"
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                                className="input"
-                                placeholder="Your name"
-                            />
-                        </div>
-
-                        <div>
-                            <label htmlFor="email" className="label">
-                                Email address
-                            </label>
-                            <input
-                                id="email"
-                                name="email"
-                                type="email"
-                                autoComplete="email"
-                                required
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                className="input"
-                                placeholder="you@example.com"
-                            />
-                        </div>
-
-                        <div>
-                            <label htmlFor="password" className="label">
-                                Password
-                            </label>
-                            <input
-                                id="password"
-                                name="password"
-                                type="password"
-                                autoComplete="new-password"
-                                required
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="input"
-                                placeholder="••••••••"
-                            />
-                            <p className="mt-1.5 text-xs text-gray-500">
-                                At least 8 characters with a number and symbol
-                            </p>
-                        </div>
-
-                        <button
-                            type="submit"
-                            disabled={isLoading}
-                            className="btn btn-primary w-full py-3 text-base disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                            {isLoading ? (
+                    <Link to="/" className="inline-flex items-center gap-2 group">
+                        <div className="relative">
+                            <div className="absolute inset-0 rounded-lg bg-primary/20 blur-lg group-hover:blur-xl transition-all duration-300" />
+                            <div className="relative flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-primary-light shadow-lg">
                                 <svg
-                                    className="h-5 w-5 animate-spin"
+                                    className="h-5 w-5 text-white"
                                     fill="none"
                                     viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                    strokeWidth={2.5}
                                 >
-                                    <circle
-                                        className="opacity-25"
-                                        cx="12"
-                                        cy="12"
-                                        r="10"
-                                        stroke="currentColor"
-                                        strokeWidth="4"
-                                    />
                                     <path
-                                        className="opacity-75"
-                                        fill="currentColor"
-                                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"
                                     />
                                 </svg>
-                            ) : (
-                                'Create account'
-                            )}
+                            </div>
+                        </div>
+                        <span className="text-xl font-semibold text-white">Savlink</span>
+                    </Link>
+
+                    <h2 className="mt-6 text-3xl font-semibold text-white">
+                        Create your account
+                    </h2>
+                    <p className="mt-2 text-sm text-gray-400">
+                        Join thousands organizing their digital life
+                    </p>
+                </motion.div>
+
+                {/* Form */}
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.1 }}
+                    className="mt-8 sm:mx-auto sm:w-full sm:max-w-md"
+                >
+                    <div className="bg-gray-950/50 backdrop-blur-xl border border-gray-900/50 py-8 px-4 shadow-2xl sm:rounded-lg sm:px-10">
+
+                        {/* Error Message */}
+                        {error && (
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.95 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm"
+                            >
+                                {error}
+                            </motion.div>
+                        )}
+
+                        {/* Google Sign Up */}
+                        <button
+                            onClick={handleGoogleRegister}
+                            disabled={loading}
+                            className="w-full flex justify-center items-center gap-3 px-4 py-3 border border-gray-700 rounded-lg shadow-sm text-sm font-medium text-gray-300 bg-gray-900/50 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-gray-950 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <svg className="h-5 w-5" viewBox="0 0 24 24">
+                                <path
+                                    fill="currentColor"
+                                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                                />
+                                <path
+                                    fill="currentColor"
+                                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                                />
+                                <path
+                                    fill="currentColor"
+                                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                                />
+                                <path
+                                    fill="currentColor"
+                                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                                />
+                            </svg>
+                            Continue with Google
                         </button>
 
-                        <p className="text-center text-xs text-gray-500">
-                            By creating an account, you agree to our{' '}
-                            <Link to="/terms" className="text-savlink-primary hover:underline">
-                                Terms
-                            </Link>{' '}
-                            and{' '}
-                            <Link to="/privacy" className="text-savlink-primary hover:underline">
-                                Privacy Policy
-                            </Link>
-                        </p>
-                    </form>
+                        <div className="mt-6">
+                            <div className="relative">
+                                <div className="absolute inset-0 flex items-center">
+                                    <div className="w-full border-t border-gray-800" />
+                                </div>
+                                <div className="relative flex justify-center text-sm">
+                                    <span className="px-2 bg-gray-950 text-gray-400">or</span>
+                                </div>
+                            </div>
+                        </div>
 
-                    <p className="mt-8 text-center text-sm text-gray-600">
-                        Already have an account?{' '}
-                        <Link
-                            to="/login"
-                            className="font-semibold text-savlink-primary hover:text-savlink-primary-light"
-                        >
-                            Sign in
-                        </Link>
-                    </p>
+                        {/* Email/Password Form */}
+                        <form className="mt-6 space-y-6" onSubmit={handleEmailRegister}>
+                            <div>
+                                <label htmlFor="name" className="block text-sm font-medium text-gray-300">
+                                    Full name
+                                </label>
+                                <div className="mt-1">
+                                    <input
+                                        id="name"
+                                        name="name"
+                                        type="text"
+                                        autoComplete="name"
+                                        required
+                                        value={formData.name}
+                                        onChange={handleInputChange}
+                                        className="appearance-none block w-full px-3 py-2 border border-gray-700 rounded-md placeholder-gray-500 text-white bg-gray-900/50 focus:outline-none focus:ring-primary focus:border-primary focus:z-10 sm:text-sm"
+                                        placeholder="Enter your full name"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label htmlFor="email" className="block text-sm font-medium text-gray-300">
+                                    Email address
+                                </label>
+                                <div className="mt-1">
+                                    <input
+                                        id="email"
+                                        name="email"
+                                        type="email"
+                                        autoComplete="email"
+                                        required
+                                        value={formData.email}
+                                        onChange={handleInputChange}
+                                        className="appearance-none block w-full px-3 py-2 border border-gray-700 rounded-md placeholder-gray-500 text-white bg-gray-900/50 focus:outline-none focus:ring-primary focus:border-primary focus:z-10 sm:text-sm"
+                                        placeholder="Enter your email"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label htmlFor="password" className="block text-sm font-medium text-gray-300">
+                                    Password
+                                </label>
+                                <div className="mt-1 relative">
+                                    <input
+                                        id="password"
+                                        name="password"
+                                        type={showPassword ? 'text' : 'password'}
+                                        autoComplete="new-password"
+                                        required
+                                        value={formData.password}
+                                        onChange={handleInputChange}
+                                        className="appearance-none block w-full px-3 py-2 pr-10 border border-gray-700 rounded-md placeholder-gray-500 text-white bg-gray-900/50 focus:outline-none focus:ring-primary focus:border-primary focus:z-10 sm:text-sm"
+                                        placeholder="Create a password"
+                                    />
+                                    <button
+                                        type="button"
+                                        className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                    >
+                                        {showPassword ? (
+                                            <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                                            </svg>
+                                        ) : (
+                                            <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                            </svg>
+                                        )}
+                                    </button>
+                                </div>
+
+                                {/* Password Requirements */}
+                                {formData.password && (
+                                    <div className="mt-2 space-y-1">
+                                        <div className="text-xs text-gray-400">Password must contain:</div>
+                                        <div className="grid grid-cols-1 gap-1 text-xs">
+                                            <div className={`flex items-center gap-1 ${passwordValidation.minLength ? 'text-green-400' : 'text-gray-500'}`}>
+                                                <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                </svg>
+                                                At least 8 characters
+                                            </div>
+                                            <div className={`flex items-center gap-1 ${passwordValidation.hasUpper ? 'text-green-400' : 'text-gray-500'}`}>
+                                                <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                </svg>
+                                                One uppercase letter
+                                            </div>
+                                            <div className={`flex items-center gap-1 ${passwordValidation.hasLower ? 'text-green-400' : 'text-gray-500'}`}>
+                                                <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                </svg>
+                                                One lowercase letter
+                                            </div>
+                                            <div className={`flex items-center gap-1 ${passwordValidation.hasNumber ? 'text-green-400' : 'text-gray-500'}`}>
+                                                <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                </svg>
+                                                One number
+                                            </div>
+                                            <div className={`flex items-center gap-1 ${passwordValidation.hasSpecial ? 'text-green-400' : 'text-gray-500'}`}>
+                                                <svg className="h-3 w-3" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                </svg>
+                                                One special character
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div>
+                                <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-300">
+                                    Confirm password
+                                </label>
+                                <div className="mt-1">
+                                    <input
+                                        id="confirmPassword"
+                                        name="confirmPassword"
+                                        type="password"
+                                        autoComplete="new-password"
+                                        required
+                                        value={formData.confirmPassword}
+                                        onChange={handleInputChange}
+                                        className={`appearance-none block w-full px-3 py-2 border rounded-md placeholder-gray-500 text-white bg-gray-900/50 focus:outline-none focus:ring-primary focus:z-10 sm:text-sm ${formData.confirmPassword && !passwordsMatch
+                                                ? 'border-red-500 focus:border-red-500'
+                                                : 'border-gray-700 focus:border-primary'
+                                            }`}
+                                        placeholder="Confirm your password"
+                                    />
+                                    {formData.confirmPassword && !passwordsMatch && (
+                                        <p className="mt-1 text-xs text-red-400">Passwords do not match</p>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="flex items-center">
+                                <input
+                                    id="agree-terms"
+                                    name="agree-terms"
+                                    type="checkbox"
+                                    required
+                                    className="h-4 w-4 text-primary focus:ring-primary border-gray-700 rounded bg-gray-900"
+                                />
+                                <label htmlFor="agree-terms" className="ml-2 block text-sm text-gray-400">
+                                    I agree to the{' '}
+                                    <Link to="/terms" className="text-primary hover:text-primary-light">
+                                        Terms of Service
+                                    </Link>
+                                    {' '}and{' '}
+                                    <Link to="/privacy" className="text-primary hover:text-primary-light">
+                                        Privacy Policy
+                                    </Link>
+                                </label>
+                            </div>
+
+                            <div>
+                                <button
+                                    type="submit"
+                                    disabled={loading || !isPasswordValid || !passwordsMatch}
+                                    className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-light focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary focus:ring-offset-gray-950 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {loading ? (
+                                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                    ) : null}
+                                    {loading ? 'Creating account...' : 'Create account'}
+                                </button>
+                            </div>
+                        </form>
+
+                        {/* Login Link */}
+                        <div className="mt-6">
+                            <div className="relative">
+                                <div className="absolute inset-0 flex items-center">
+                                    <div className="w-full border-t border-gray-800" />
+                                </div>
+                                <div className="relative flex justify-center text-sm">
+                                    <span className="px-2 bg-gray-950 text-gray-400">
+                                        Already have an account?{' '}
+                                        <Link to="/login" className="font-medium text-primary hover:text-primary-light">
+                                            Sign in
+                                        </Link>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </motion.div>
             </div>
         </div>
-    );
+    )
 }

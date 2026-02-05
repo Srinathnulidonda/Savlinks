@@ -1,3 +1,5 @@
+# server/app/routes/auth.py
+
 import logging
 
 from flask import Blueprint, request, current_app, g
