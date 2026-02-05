@@ -65,8 +65,8 @@ export default function HomeNavbar() {
                 animate={{ y: 0 }}
                 transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                 className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${isScrolled
-                        ? 'bg-black/50 backdrop-blur-xl border-b border-gray-900/50'
-                        : 'bg-transparent'
+                    ? 'bg-black/50 backdrop-blur-xl border-b border-gray-900/50'
+                    : 'bg-transparent'
                     }`}
             >
                 <nav className="mx-auto max-w-7xl">

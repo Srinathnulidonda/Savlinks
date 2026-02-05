@@ -53,15 +53,14 @@ def validate_config(config: 'Config', environment: str) -> List[str]:
             "DATABASE_URL is required. Set DATABASE_URL or individual PG* variables."
         )
 
+    # Supabase Auth validation
     if environment == "production":
-        if not os.environ.get("JWT_SECRET_KEY"):
+        if not config.SUPABASE_URL:
             raise ConfigurationError(
-                "JWT_SECRET_KEY must be explicitly set in production."
+                "SUPABASE_URL is required in production."
             )
-        if not os.environ.get("SECRET_KEY"):
-            raise ConfigurationError(
-                "SECRET_KEY must be explicitly set in production."
-            )
+        if not config.SUPABASE_PROJECT_ID:
+            warnings.append("SUPABASE_PROJECT_ID not set. Will extract from SUPABASE_URL.")
 
     if not config.REDIS_URL:
         warnings.append("Redis not configured. Rate limiting will use memory storage.")
@@ -99,12 +98,12 @@ class Config:
         "connect_args": {"connect_timeout": 10}
     }
 
-    JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", os.urandom(32).hex())
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=1)
-    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=30)
-    JWT_BLACKLIST_ENABLED = True
-    JWT_BLACKLIST_TOKEN_CHECKS = ["access", "refresh"]
+    # Supabase Authentication Configuration
+    SUPABASE_URL = os.environ.get("SUPABASE_URL")  # https://xxx.supabase.co
+    SUPABASE_PROJECT_ID = os.environ.get("SUPABASE_PROJECT_ID")  # Will extract from URL if not set
+    SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY")  # For frontend use (not needed in backend)
 
+    # Redis Configuration
     REDIS_URL = get_redis_url()
     RATELIMIT_STORAGE_URI = REDIS_URL if REDIS_URL else "memory://"
     RATELIMIT_DEFAULT = "200 per hour"
@@ -112,11 +111,13 @@ class Config:
     RATELIMIT_STRATEGY = "fixed-window"
     RATELIMIT_KEY_PREFIX = "savlink_rl"
 
+    # Cache Configuration
     CACHE_TTL_LINK = 3600
     CACHE_TTL_BLACKLIST = 86400 * 31
     CACHE_TTL_METADATA = 86400
     CACHE_TTL_STATS = 300
 
+    # Email Configuration (for notifications only, not auth)
     BREVO_API_KEY = os.environ.get("BREVO_API_KEY")
     BREVO_SMTP_SERVER = os.environ.get("BREVO_SMTP_SERVER", "smtp-relay.brevo.com")
     BREVO_SMTP_PORT = int(os.environ.get("BREVO_SMTP_PORT", 587))
@@ -126,6 +127,7 @@ class Config:
     BREVO_SENDER_NAME = os.environ.get("BREVO_SENDER_NAME", "Savlink")
     REPLY_TO_EMAIL = os.environ.get("REPLY_TO_EMAIL")
 
+    # URL Configuration
     PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://savlink.vercel.app")
     FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://savlink.vercel.app")
     
@@ -138,9 +140,7 @@ class Config:
 
     CORS_ORIGINS = [o.strip() for o in os.environ.get("CORS_ORIGINS", "*").split(",")]
 
-    PASSWORD_RESET_TOKEN_EXPIRES = 3600
-    PASSWORD_RESET_SALT = os.environ.get("PASSWORD_RESET_SALT", os.urandom(16).hex())
-
+    # Slug Configuration
     RESERVED_SLUGS = {
         "admin", "api", "login", "logout", "register", "signup",
         "dashboard", "settings", "profile", "account", "user", "users",
@@ -160,24 +160,29 @@ class Config:
     SLUG_MAX_LENGTH = 32
     AUTO_SLUG_LENGTH = 7
 
+    # Limits Configuration
     MAX_LINKS_PER_USER = int(os.environ.get("MAX_LINKS_PER_USER", 10000))
     MAX_FOLDERS_PER_USER = int(os.environ.get("MAX_FOLDERS_PER_USER", 100))
     MAX_TAGS_PER_USER = int(os.environ.get("MAX_TAGS_PER_USER", 500))
     MAX_TAGS_PER_LINK = int(os.environ.get("MAX_TAGS_PER_LINK", 20))
 
+    # Health and Monitoring
     HEALTH_CHECK_TIMEOUT = 10
     HEALTH_CHECK_INTERVAL_HOURS = 24
     METADATA_FETCH_TIMEOUT = 10
 
+    # Data Retention
     CLICK_RETENTION_DAYS = int(os.environ.get("CLICK_RETENTION_DAYS", 365))
     ACTIVITY_RETENTION_DAYS = int(os.environ.get("ACTIVITY_RETENTION_DAYS", 90))
     HEALTH_CHECK_RETENTION_DAYS = int(os.environ.get("HEALTH_CHECK_RETENTION_DAYS", 30))
     TRASH_RETENTION_DAYS = int(os.environ.get("TRASH_RETENTION_DAYS", 30))
 
+    # Feature Flags
     ENABLE_WEEKLY_DIGEST = os.environ.get("ENABLE_WEEKLY_DIGEST", "false").lower() == "true"
     ENABLE_EXPIRATION_ALERTS = os.environ.get("ENABLE_EXPIRATION_ALERTS", "true").lower() == "true"
     ENABLE_BROKEN_LINK_ALERTS = os.environ.get("ENABLE_BROKEN_LINK_ALERTS", "true").lower() == "true"
 
+    # Monitoring
     SENTRY_DSN = os.environ.get("SENTRY_DSN")
 
 
@@ -195,7 +200,6 @@ class TestingConfig(Config):
     FLASK_ENV = "testing"
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
     RATELIMIT_STORAGE_URI = "memory://"
-    JWT_SECRET_KEY = "test-secret-key"
     SECRET_KEY = "test-secret-key"
     
     PUBLIC_BASE_URL = "http://localhost:5000"
