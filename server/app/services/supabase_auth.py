@@ -116,58 +116,95 @@ class SupabaseAuthService:
             
             if response.status_code == 200:
                 data = response.json()
+                logger.info(f"Supabase response data keys: {data.keys()}")
                 
-                # Extract user info
-                user_data = data.get("user", {})
-                
-                # Make sure we have required user data
-                user_id = user_data.get("id")
-                user_email = user_data.get("email") or email
-                
-                if not user_id:
-                    logger.error(f"Invalid user data from Supabase: ID={user_id}, Email={user_email}")
-                    return None, "Invalid response from authentication service"
-                
-                logger.info(f"Creating user in database: ID={user_id}, Email={user_email}")
-                
-                # Create user in our database
-                try:
-                    user = User(
-                        id=user_id,
-                        email=user_email,
-                        name=name or email.split("@")[0].replace(".", " ").title(),
-                        auth_provider="email"
-                    )
+                # Check if we have a session (email confirmation not required)
+                if data.get("access_token"):
+                    # User created and logged in immediately
+                    user_data = data.get("user", {})
+                    user_id = user_data.get("id")
+                    user_email = user_data.get("email") or email
                     
-                    db.session.add(user)
-                    db.session.commit()
+                    if user_id:
+                        logger.info(f"Creating user in database: ID={user_id}, Email={user_email}")
+                        
+                        try:
+                            user = User(
+                                id=user_id,
+                                email=user_email,
+                                name=name or email.split("@")[0].replace(".", " ").title(),
+                                auth_provider="email"
+                            )
+                            
+                            db.session.add(user)
+                            db.session.commit()
+                            
+                            logger.info(f"User created successfully in database")
+                        except Exception as db_error:
+                            logger.error(f"Database error creating user: {db_error}")
+                            db.session.rollback()
+                            # Don't fail the registration if DB insert fails
+                            user = {
+                                "id": user_id,
+                                "email": user_email,
+                                "name": name or email.split("@")[0].replace(".", " ").title()
+                            }
+                        
+                        # Send welcome email
+                        try:
+                            from app.services.email_service import get_email_service
+                            email_service = get_email_service()
+                            email_service.send_welcome_email(user_email, user_name=name)
+                        except Exception as e:
+                            logger.warning(f"Welcome email failed: {e}")
+                        
+                        # Return tokens and user
+                        return {
+                            "access_token": data.get("access_token"),
+                            "refresh_token": data.get("refresh_token"),
+                            "user": user.to_dict() if hasattr(user, 'to_dict') else user
+                        }, None
+                    else:
+                        logger.error(f"No user ID despite having access token")
+                        return None, "Invalid response from authentication service"
+                
+                # Email confirmation required - user created but not logged in
+                elif data.get("user") or data.get("id"):
+                    # User was created but needs to confirm email
+                    logger.info("User created but email confirmation required")
                     
-                    logger.info(f"User created successfully in database")
-                except Exception as db_error:
-                    logger.error(f"Database error creating user: {db_error}")
-                    db.session.rollback()
-                    # Don't fail the registration if DB insert fails - user is created in Supabase
-                    user = {
-                        "id": user_id,
-                        "email": user_email,
-                        "name": name or email.split("@")[0].replace(".", " ").title()
-                    }
+                    # Extract whatever user info we have
+                    user_info = data.get("user", data)
+                    user_id = user_info.get("id")
+                    user_email = user_info.get("email") or email
+                    
+                    # Even without full session, we can track that user registered
+                    # but they need to confirm email
+                    return {
+                        "access_token": None,
+                        "refresh_token": None,
+                        "user": {
+                            "email": user_email,
+                            "name": name or email.split("@")[0].replace(".", " ").title(),
+                            "email_confirmation_required": True
+                        }
+                    }, None
                 
-                # Send welcome email
-                try:
-                    from app.services.email_service import get_email_service
-                    email_service = get_email_service()
-                    email_service.send_welcome_email(user_email, user_name=name)
-                except Exception as e:
-                    logger.warning(f"Welcome email failed: {e}")
-                
-                # Return tokens
-                return {
-                    "access_token": data.get("access_token"),
-                    "refresh_token": data.get("refresh_token"),
-                    "user": user.to_dict() if hasattr(user, 'to_dict') else user
-                }, None
-                
+                else:
+                    # Registration successful but no user data returned
+                    # This usually means email confirmation is required
+                    logger.info("Registration successful but email confirmation required")
+                    
+                    return {
+                        "access_token": None,
+                        "refresh_token": None,
+                        "user": {
+                            "email": email,
+                            "name": name or email.split("@")[0].replace(".", " ").title(),
+                            "email_confirmation_required": True
+                        }
+                    }, None
+                    
             elif response.status_code == 400:
                 error_data = response.json()
                 logger.error(f"Supabase registration error: {error_data}")
