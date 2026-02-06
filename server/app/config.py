@@ -2,6 +2,7 @@
 
 import os
 import sys
+import json
 from datetime import timedelta
 from typing import List, Optional
 from dotenv import load_dotenv
@@ -45,6 +46,25 @@ def get_redis_url() -> Optional[str]:
     return redis_url
 
 
+def get_firebase_credentials():
+    """Get Firebase credentials from environment"""
+    # Try JSON string first (for production/cloud deployment)
+    credentials_json = os.environ.get("FIREBASE_ADMIN_CREDENTIALS")
+    if credentials_json:
+        try:
+            return json.loads(credentials_json)
+        except json.JSONDecodeError:
+            pass
+    
+    # Fallback to file path (for local development)
+    firebase_config_path = os.environ.get("FIREBASE_CONFIG")
+    if firebase_config_path and os.path.exists(firebase_config_path):
+        return firebase_config_path
+    
+    # Use Application Default Credentials (for Google Cloud/Firebase hosting)
+    return None
+
+
 def validate_config(config: 'Config', environment: str) -> List[str]:
     warnings = []
 
@@ -59,8 +79,8 @@ def validate_config(config: 'Config', environment: str) -> List[str]:
             raise ConfigurationError(
                 "FIREBASE_PROJECT_ID is required in production."
             )
-        if not config.FIREBASE_CONFIG:
-            warnings.append("FIREBASE_CONFIG not set. Using Application Default Credentials.")
+        if not config.FIREBASE_CONFIG and not config.FIREBASE_ADMIN_CREDENTIALS:
+            warnings.append("Firebase credentials not configured. Using Application Default Credentials.")
 
     if not config.REDIS_URL:
         warnings.append("Redis not configured. Rate limiting will use memory storage.")
@@ -100,8 +120,9 @@ class Config:
 
     # Firebase Authentication Configuration
     FIREBASE_PROJECT_ID = os.environ.get("FIREBASE_PROJECT_ID")
-    FIREBASE_CONFIG = os.environ.get("FIREBASE_CONFIG")  # Path to service account JSON or dict
+    FIREBASE_CONFIG = get_firebase_credentials()
     FIREBASE_WEB_API_KEY = os.environ.get("FIREBASE_WEB_API_KEY")  # For frontend use
+    FIREBASE_ADMIN_CREDENTIALS = os.environ.get("FIREBASE_ADMIN_CREDENTIALS")  # JSON string for production
 
     # Supabase Database Configuration (keeping for database connection)
     SUPABASE_URL = os.environ.get("SUPABASE_URL")  # Optional: for direct DB operations
@@ -206,9 +227,12 @@ class Config:
     # Monitoring
     SENTRY_DSN = os.environ.get("SENTRY_DSN")
 
-    # Firebase Admin SDK Configuration
-    FIREBASE_ADMIN_CREDENTIALS = os.environ.get("FIREBASE_ADMIN_CREDENTIALS")  # JSON string of service account
-    GOOGLE_APPLICATION_CREDENTIALS = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")  # Path to service account file
+    # Google Cloud Configuration (for Firebase Admin SDK)
+    GOOGLE_APPLICATION_CREDENTIALS = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+
+    # Password Reset Configuration (for custom reset flow)
+    PASSWORD_RESET_TOKEN_EXPIRY = 3600  # 1 hour in seconds
+    PASSWORD_RESET_EMAIL_ENABLED = True
 
 
 class DevelopmentConfig(Config):
@@ -216,7 +240,7 @@ class DevelopmentConfig(Config):
     FLASK_ENV = "development"
     
     PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:5000")
-    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
     BASE_URL = os.environ.get("BASE_URL", "http://localhost:5000")
     
     # Disable security features in development
@@ -225,6 +249,9 @@ class DevelopmentConfig(Config):
     
     # More lenient rate limiting in development
     RATELIMIT_DEFAULT = "1000 per hour"
+    
+    # Firebase config for development
+    FIREBASE_CONFIG = os.environ.get("FIREBASE_CONFIG", "./firebase-service-account.json")
 
 
 class TestingConfig(Config):
@@ -242,6 +269,7 @@ class TestingConfig(Config):
     # Disable external services in testing
     FIREBASE_PROJECT_ID = "test-project"
     FIREBASE_CONFIG = None
+    FIREBASE_ADMIN_CREDENTIALS = None
     
     # Disable security features in testing
     SESSION_COOKIE_SECURE = False
@@ -250,6 +278,7 @@ class TestingConfig(Config):
     # Disable email in testing
     BREVO_API_KEY = None
     BREVO_SMTP_PASSWORD = None
+    PASSWORD_RESET_EMAIL_ENABLED = False
 
 
 class ProductionConfig(Config):
@@ -273,6 +302,9 @@ class ProductionConfig(Config):
     
     # Stricter security in production
     WTF_CSRF_ENABLED = True
+    
+    # Firebase Admin SDK will use Application Default Credentials if no explicit config
+    FIREBASE_CONFIG = get_firebase_credentials()
 
 
 config_by_name = {
