@@ -157,8 +157,8 @@ def login():
                 ip_address=request.remote_addr,
                 user_agent=request.headers.get('User-Agent')
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Activity logging failed: {e}")
         
         return current_app.api_response.success(
             {
@@ -208,8 +208,8 @@ def forgot_password():
                     ip_address=request.remote_addr,
                     user_agent=request.headers.get('User-Agent')
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Activity logging failed: {e}")
             
             logger.info(f"Password reset requested for {mask_email(clean_email)}")
         
@@ -351,8 +351,8 @@ def logout():
                 ip_address=request.remote_addr,
                 user_agent=request.headers.get('User-Agent')
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Activity logging failed: {e}")
         
         return current_app.api_response.success(
             None,
@@ -488,13 +488,16 @@ def update_profile():
             pass
         
         # Log activity
-        ActivityService.log_activity(
-            user_id=user.id,
-            activity_type=ActivityType.USER_UPDATED,
-            resource_type="user",
-            resource_id=user.id,
-            extra_data={"fields": updated_fields}
-        )
+        try:
+            ActivityService.log_activity(
+                user_id=user.id,
+                activity_type=ActivityType.USER_UPDATED,
+                resource_type="user",
+                resource_id=user.id,
+                extra_data={"fields": updated_fields}
+            )
+        except Exception as e:
+            logger.warning(f"Activity logging failed: {e}")
         
         return current_app.api_response.success(
             user.to_dict(),
@@ -565,13 +568,16 @@ def change_password():
             )
         
         # Log activity
-        ActivityService.log_activity(
-            user_id=user.id,
-            activity_type=ActivityType.PASSWORD_CHANGED,
-            resource_type="user",
-            resource_id=user.id,
-            ip_address=request.remote_addr
-        )
+        try:
+            ActivityService.log_activity(
+                user_id=user.id,
+                activity_type=ActivityType.PASSWORD_CHANGED,
+                resource_type="user",
+                resource_id=user.id,
+                ip_address=request.remote_addr
+            )
+        except Exception as e:
+            logger.warning(f"Activity logging failed: {e}")
         
         return current_app.api_response.success(
             None,

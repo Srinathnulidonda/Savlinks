@@ -585,10 +585,10 @@ class BrevoEmailService:
             return False
 
     def _start_email_worker(self):
-        def worker():
-            from flask import current_app
-            app = current_app._get_current_object()
-            
+        # Get the Flask app instance when starting the worker
+        flask_app = current_app._get_current_object()
+        
+        def worker(app):
             while True:
                 try:
                     with app.app_context():
@@ -605,7 +605,7 @@ class BrevoEmailService:
                     logger.error(f"Email worker error: {e}")
                     time.sleep(5)
 
-        thread = threading.Thread(target=worker, daemon=True, name="SavlinkEmailWorker")
+        thread = threading.Thread(target=worker, args=(flask_app,), daemon=True, name="SavlinkEmailWorker")
         thread.start()
 
     def _send_email(self, email_data: Dict, retry_count: int = 0):

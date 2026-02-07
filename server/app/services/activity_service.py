@@ -58,6 +58,28 @@ class ActivityService:
             )
 
     @staticmethod
+    def log_activity(
+        user_id: str,
+        activity_type: ActivityType,
+        resource_type: str,
+        resource_id: Optional[str] = None,
+        resource_title: Optional[str] = None,
+        extra_data: Optional[dict] = None,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None
+    ) -> Optional[ActivityLog]:
+        """Alias for log() method for backward compatibility"""
+        return ActivityService.log(
+            user_id=user_id,
+            activity_type=activity_type,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            resource_title=resource_title,
+            extra_data=extra_data,
+            async_log=True
+        )
+
+    @staticmethod
     def _log_async(
         app,
         user_id: str,
@@ -90,21 +112,28 @@ class ActivityService:
         ip_address: Optional[str],
         user_agent: Optional[str]
     ) -> ActivityLog:
-        activity = ActivityLog(
-            user_id=user_id,
-            activity_type=activity_type,
-            resource_type=resource_type,
-            resource_id=resource_id,
-            resource_title=resource_title,
-            extra_data=extra_data,
-            ip_address=ip_address,
-            user_agent=user_agent
-        )
+        try:
+            activity = ActivityLog(
+                user_id=user_id,
+                activity_type=activity_type,
+                resource_type=resource_type,
+                resource_id=resource_id,
+                resource_title=resource_title,
+                extra_data=extra_data,
+                ip_address=ip_address,
+                user_agent=user_agent
+            )
 
-        db.session.add(activity)
-        db.session.commit()
+            db.session.add(activity)
+            db.session.commit()
 
-        return activity
+            logger.debug(f"Activity logged: {activity_type.value} for user {user_id}")
+            return activity
+
+        except Exception as e:
+            logger.error(f"Failed to create activity log: {e}")
+            db.session.rollback()
+            raise
 
     @staticmethod
     def get_user_activity(
@@ -114,17 +143,22 @@ class ActivityService:
         limit: int = 50,
         offset: int = 0
     ) -> List[ActivityLog]:
-        query = ActivityLog.query.filter_by(user_id=user_id)
+        try:
+            query = ActivityLog.query.filter_by(user_id=user_id)
 
-        if activity_type:
-            query = query.filter_by(activity_type=activity_type)
+            if activity_type:
+                query = query.filter_by(activity_type=activity_type)
 
-        if resource_type:
-            query = query.filter_by(resource_type=resource_type)
+            if resource_type:
+                query = query.filter_by(resource_type=resource_type)
 
-        return query.order_by(
-            ActivityLog.created_at.desc()
-        ).offset(offset).limit(limit).all()
+            return query.order_by(
+                ActivityLog.created_at.desc()
+            ).offset(offset).limit(limit).all()
+
+        except Exception as e:
+            logger.error(f"Failed to get user activity: {e}")
+            return []
 
     @staticmethod
     def get_resource_activity(
@@ -132,10 +166,15 @@ class ActivityService:
         resource_id: str,
         limit: int = 50
     ) -> List[ActivityLog]:
-        return ActivityLog.query.filter_by(
-            resource_type=resource_type,
-            resource_id=resource_id
-        ).order_by(ActivityLog.created_at.desc()).limit(limit).all()
+        try:
+            return ActivityLog.query.filter_by(
+                resource_type=resource_type,
+                resource_id=resource_id
+            ).order_by(ActivityLog.created_at.desc()).limit(limit).all()
+
+        except Exception as e:
+            logger.error(f"Failed to get resource activity: {e}")
+            return []
 
     @staticmethod
     def cleanup_old_activity(days: int = 90) -> int:
@@ -161,20 +200,29 @@ class ActivityService:
     def get_activity_summary(user_id: str, days: int = 7) -> dict:
         from datetime import timedelta
 
-        since = datetime.utcnow() - timedelta(days=days)
+        try:
+            since = datetime.utcnow() - timedelta(days=days)
 
-        activities = ActivityLog.query.filter(
-            ActivityLog.user_id == user_id,
-            ActivityLog.created_at >= since
-        ).all()
+            activities = ActivityLog.query.filter(
+                ActivityLog.user_id == user_id,
+                ActivityLog.created_at >= since
+            ).all()
 
-        summary = {at.value: 0 for at in ActivityType}
+            summary = {at.value: 0 for at in ActivityType}
 
-        for activity in activities:
-            summary[activity.activity_type.value] += 1
+            for activity in activities:
+                summary[activity.activity_type.value] += 1
 
-        return {
-            "period_days": days,
-            "total_activities": len(activities),
-            "by_type": summary
-        }
+            return {
+                "period_days": days,
+                "total_activities": len(activities),
+                "by_type": summary
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to get activity summary: {e}")
+            return {
+                "period_days": days,
+                "total_activities": 0,
+                "by_type": {at.value: 0 for at in ActivityType}
+            }
