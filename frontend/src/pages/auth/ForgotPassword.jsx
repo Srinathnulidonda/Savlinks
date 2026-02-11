@@ -1,6 +1,6 @@
 // src/pages/auth/ForgotPassword.jsx
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { AuthService } from '../../utils/auth'
 import toast from 'react-hot-toast'
@@ -9,80 +9,86 @@ export default function ForgotPassword() {
     const [email, setEmail] = useState('')
     const [loading, setLoading] = useState(false)
     const [submitted, setSubmitted] = useState(false)
+    const [error, setError] = useState('')
+
+    const navigate = useNavigate()
 
     const handleSubmit = async (e) => {
         e.preventDefault()
         setLoading(true)
+        setError('')
 
         try {
-            const result = await AuthService.requestPasswordReset(email)
+            const response = await AuthService.forgotPassword({
+                email: email.trim()
+            })
 
-            if (result.success) {
-                setSubmitted(true)
-                toast.success('Check your email for reset instructions')
-            } else {
-                toast.error(result.message || 'Failed to send reset email')
+            if (!response.success) {
+                // Backend returns success even if email doesn't exist (security)
+                // So any error here is a real error
+                setError(response.error?.message || 'Failed to send reset email')
+                return
             }
-        } catch (error) {
-            toast.error('Something went wrong. Please try again.')
+
+            setSubmitted(true)
+            toast.success(response.message || 'Password reset email sent!')
+        } catch (err) {
+            console.error('Password reset error:', err)
+            setError('Failed to send password reset email. Please try again.')
         } finally {
             setLoading(false)
         }
     }
 
+    // Rest of component remains the same...
     if (submitted) {
         return (
-            <div className="min-h-screen bg-black flex flex-col justify-center py-6 px-4 sm:py-12 sm:px-6 lg:px-8">
+            <div className="min-h-screen bg-black flex flex-col justify-center py-12 sm:px-6 lg:px-8">
                 <div className="sm:mx-auto sm:w-full sm:max-w-md">
                     <motion.div
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5 }}
                         className="bg-gray-950/50 backdrop-blur-xl border border-gray-900/50 py-8 px-4 shadow-2xl sm:rounded-lg sm:px-10"
                     >
                         <div className="text-center">
                             <svg
                                 className="mx-auto h-12 w-12 text-green-400"
                                 fill="none"
-                                viewBox="0 0 24 24"
                                 stroke="currentColor"
+                                viewBox="0 0 24 24"
                             >
                                 <path
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                     strokeWidth={2}
-                                    d="M3 19v-8.93a2 2 0 01.89-1.664l7-4.666a2 2 0 012.22 0l7 4.666A2 2 0 0121 10.07V19M3 19a2 2 0 002 2h14a2 2 0 002-2M3 19l6.75-4.5M21 19l-6.75-4.5M3 10l6.75 4.5M21 10l-6.75 4.5m0 0l-1.14.76a2 2 0 01-2.22 0l-1.14-.76"
+                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
                                 />
                             </svg>
-                            <h2 className="mt-4 text-2xl font-semibold text-white">Check your email</h2>
+                            <h2 className="mt-4 text-xl font-semibold text-white">Check your email</h2>
                             <p className="mt-2 text-sm text-gray-400">
-                                We've sent password reset instructions to:
+                                If an account exists with {email}, you'll receive a password reset link.
                             </p>
-                            <p className="mt-1 text-sm font-medium text-primary">{email}</p>
-                        </div>
-
-                        <div className="mt-6 space-y-4">
-                            <p className="text-xs text-gray-400 text-center">
-                                Didn't receive the email? Check your spam folder or try again.
-                            </p>
-
-                            <div className="flex flex-col gap-3">
+                            <p className="mt-4 text-xs text-gray-500">
+                                Didn't receive the email? Check your spam folder or{' '}
                                 <button
                                     onClick={() => {
                                         setSubmitted(false)
-                                        setEmail('')
+                                        setError('')
                                     }}
-                                    className="w-full py-2 px-4 border border-gray-700 rounded-md text-sm font-medium text-gray-300 bg-gray-900/50 hover:bg-gray-800 transition-all"
+                                    className="text-primary hover:text-primary-light"
                                 >
-                                    Try another email
+                                    try again
                                 </button>
-
-                                <Link
-                                    to="/login"
-                                    className="w-full py-2 px-4 text-center border border-transparent rounded-md text-sm font-medium text-white bg-primary hover:bg-primary-light transition-all"
-                                >
-                                    Back to login
-                                </Link>
-                            </div>
+                            </p>
+                        </div>
+                        <div className="mt-6">
+                            <Link
+                                to="/login"
+                                className="w-full flex justify-center py-2 px-4 border border-gray-700 rounded-md shadow-sm text-sm font-medium text-gray-300 bg-gray-900/50 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-gray-950 transition-all"
+                            >
+                                Back to sign in
+                            </Link>
                         </div>
                     </motion.div>
                 </div>
@@ -91,15 +97,16 @@ export default function ForgotPassword() {
     }
 
     return (
-        <div className="min-h-screen bg-black flex flex-col justify-center py-6 px-4 sm:py-12 sm:px-6 lg:px-8">
+        <div className="min-h-screen bg-black flex flex-col justify-center py-12 sm:px-6 lg:px-8">
             {/* Background Effects */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute left-1/2 top-1/4 -translate-x-1/2 -translate-y-1/2">
-                    <div className="h-[300px] w-[300px] sm:h-[400px] sm:w-[400px] rounded-full bg-primary/10 blur-[100px] sm:blur-[128px]" />
+                <div className="absolute left-1/3 top-1/4 -translate-x-1/2 -translate-y-1/2">
+                    <div className="h-[400px] w-[400px] rounded-full bg-primary/10 blur-[128px]" />
                 </div>
             </div>
 
             <div className="relative sm:mx-auto sm:w-full sm:max-w-md">
+                {/* Header */}
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -128,7 +135,7 @@ export default function ForgotPassword() {
                         <span className="text-xl font-semibold text-white">Savlink</span>
                     </Link>
 
-                    <h2 className="mt-6 text-2xl sm:text-3xl font-semibold text-white">
+                    <h2 className="mt-6 text-3xl font-semibold text-white">
                         Reset your password
                     </h2>
                     <p className="mt-2 text-sm text-gray-400">
@@ -136,13 +143,24 @@ export default function ForgotPassword() {
                     </p>
                 </motion.div>
 
+                {/* Form */}
                 <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.5, delay: 0.1 }}
-                    className="mt-6 sm:mt-8"
+                    className="mt-8"
                 >
-                    <div className="bg-gray-950/50 backdrop-blur-xl border border-gray-900/50 py-6 px-4 sm:py-8 sm:px-10 shadow-2xl rounded-lg">
+                    <div className="bg-gray-950/50 backdrop-blur-xl border border-gray-900/50 py-8 px-4 shadow-2xl sm:rounded-lg sm:px-10">
+                        {error && (
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.95 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm"
+                            >
+                                {error}
+                            </motion.div>
+                        )}
+
                         <form className="space-y-6" onSubmit={handleSubmit}>
                             <div>
                                 <label htmlFor="email" className="block text-sm font-medium text-gray-300">
@@ -156,8 +174,11 @@ export default function ForgotPassword() {
                                         autoComplete="email"
                                         required
                                         value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        className="appearance-none block w-full px-3 py-2 border border-gray-700 rounded-md placeholder-gray-500 text-white bg-gray-900/50 focus:outline-none focus:ring-primary focus:border-primary focus:z-10 text-sm sm:text-base"
+                                        onChange={(e) => {
+                                            setEmail(e.target.value)
+                                            setError('')
+                                        }}
+                                        className="appearance-none block w-full px-3 py-2 border border-gray-700 rounded-md placeholder-gray-500 text-white bg-gray-900/50 focus:outline-none focus:ring-primary focus:border-primary focus:z-10 sm:text-sm"
                                         placeholder="Enter your email"
                                     />
                                 </div>
@@ -166,26 +187,27 @@ export default function ForgotPassword() {
                             <div>
                                 <button
                                     type="submit"
-                                    disabled={loading}
-                                    className="w-full flex justify-center py-2.5 sm:py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-light focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary focus:ring-offset-gray-950 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                    disabled={loading || !email}
+                                    className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-light focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary focus:ring-offset-gray-950 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {loading ? (
                                         <>
-                                            <svg className="animate-spin -ml-1 mr-3 h-4 w-4 sm:h-5 sm:w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                             </svg>
                                             Sending...
                                         </>
-                                    ) : (
-                                        'Send reset link'
-                                    )}
+                                    ) : 'Send reset link'}
                                 </button>
                             </div>
 
-                            <div className="text-center text-sm">
-                                <Link to="/login" className="text-primary hover:text-primary-light">
-                                    Back to login
+                            <div className="text-center">
+                                <Link
+                                    to="/login"
+                                    className="text-sm text-primary hover:text-primary-light"
+                                >
+                                    Back to sign in
                                 </Link>
                             </div>
                         </form>

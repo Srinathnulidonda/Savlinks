@@ -6,67 +6,113 @@ import { AuthService } from '../../utils/auth'
 import toast from 'react-hot-toast'
 
 export default function Login() {
-    const [email, setEmail] = useState('')
-    const [password, setPassword] = useState('')
+    const [formData, setFormData] = useState({
+        email: '',
+        password: ''
+    })
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')
     const [showPassword, setShowPassword] = useState(false)
+    const [rememberMe, setRememberMe] = useState(false)
 
     const navigate = useNavigate()
     const location = useLocation()
 
-    // Get redirect URL from state or default to dashboard
-    const from = location.state?.from?.pathname || '/dashboard'
-
     useEffect(() => {
-        // Check if user is already authenticated
-        const checkAuth = async () => {
-            const { session } = await AuthService.getSession()
-            if (session) {
-                navigate('/dashboard', { replace: true })
-            }
+        // Check if already authenticated
+        if (AuthService.isAuthenticated()) {
+            navigate('/dashboard', { replace: true })
         }
-        checkAuth()
-    }, [navigate])
 
-    const handleEmailLogin = async (e) => {
+        // Show any messages from other pages
+        if (location.state?.message) {
+            toast.success(location.state.message)
+        }
+        if (location.state?.email) {
+            setFormData(prev => ({ ...prev, email: location.state.email }))
+        }
+    }, [navigate, location])
+
+    const handleInputChange = (e) => {
+        setFormData(prev => ({
+            ...prev,
+            [e.target.name]: e.target.value
+        }))
+        setError('')
+    }
+
+    const handleSubmit = async (e) => {
         e.preventDefault()
         setLoading(true)
         setError('')
 
         try {
-            const { data, error: authError } = await AuthService.login(email, password)
+            const response = await AuthService.login({
+                email: formData.email.trim(),
+                password: formData.password
+            })
 
-            if (authError) {
-                throw new Error(authError.message)
+            if (!response.success) {
+                setError(response.error?.message || 'Login failed')
+                return
             }
 
-            if (data?.session) {
-                toast.success('Welcome back!')
-                // Redirect to intended destination
-                navigate(from, { replace: true })
+            // Check if email is verified
+            const firebaseUser = AuthService.getFirebaseUser()
+            if (firebaseUser && !firebaseUser.emailVerified) {
+                toast.warning('Please verify your email before continuing.')
+                navigate('/verify-email', {
+                    state: {
+                        email: formData.email,
+                        message: 'Your email is not verified. Please check your inbox.'
+                    }
+                })
+                return
             }
+
+            toast.success(response.message || 'Welcome back!')
+
+            // Redirect to intended page or dashboard
+            const from = location.state?.from?.pathname || '/dashboard'
+            navigate(from, { replace: true })
         } catch (err) {
-            setError(err.message || 'Sign in failed')
+            console.error('Login error:', err)
+            setError('An unexpected error occurred. Please try again.')
         } finally {
             setLoading(false)
         }
     }
 
     const handleGoogleLogin = async () => {
-        // Show message that Google login is not integrated
-        toast.error('AuthService.loginWithGoogle is not fully integrated')
+        setLoading(true)
+        setError('')
+
+        try {
+            const response = await AuthService.loginWithGoogle()
+
+            if (!response.success) {
+                setError(response.error?.message || 'Google sign-in failed')
+                return
+            }
+
+            toast.success(response.message || 'Welcome!')
+
+            const from = location.state?.from?.pathname || '/dashboard'
+            navigate(from, { replace: true })
+        } catch (err) {
+            console.error('Google login error:', err)
+            setError('Google sign-in failed. Please try again.')
+        } finally {
+            setLoading(false)
+        }
     }
 
     return (
         <div className="min-h-screen bg-black flex flex-col justify-center py-6 px-4 sm:py-12 sm:px-6 lg:px-8">
             {/* Background Effects */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute left-1/2 top-1/4 -translate-x-1/2 -translate-y-1/2">
+                <div className="absolute left-1/3 top-1/4 -translate-x-1/2 -translate-y-1/2">
                     <div className="h-[300px] w-[300px] sm:h-[400px] sm:w-[400px] rounded-full bg-primary/10 blur-[100px] sm:blur-[128px]" />
-                </div>
-                <div className="absolute right-1/4 bottom-1/4 hidden sm:block">
-                    <div className="h-[250px] w-[250px] sm:h-[300px] sm:w-[300px] rounded-full bg-primary/5 blur-[80px] sm:blur-[96px]" />
                 </div>
             </div>
 
@@ -78,7 +124,6 @@ export default function Login() {
                     transition={{ duration: 0.5 }}
                     className="text-center"
                 >
-                    {/* Logo */}
                     <Link to="/" className="inline-flex items-center gap-2 group">
                         <div className="relative">
                             <div className="absolute inset-0 rounded-lg bg-primary/20 blur-lg group-hover:blur-xl transition-all duration-300" />
@@ -105,7 +150,7 @@ export default function Login() {
                         Welcome back
                     </h2>
                     <p className="mt-2 text-sm text-gray-400">
-                        Sign in to your account to continue
+                        Sign in to manage your links
                     </p>
                 </motion.div>
 
@@ -117,8 +162,6 @@ export default function Login() {
                     className="mt-6 sm:mt-8"
                 >
                     <div className="bg-gray-950/50 backdrop-blur-xl border border-gray-900/50 py-6 px-4 sm:py-8 sm:px-10 shadow-2xl rounded-lg">
-
-                        {/* Error Message */}
                         {error && (
                             <motion.div
                                 initial={{ opacity: 0, scale: 0.95 }}
@@ -129,8 +172,7 @@ export default function Login() {
                             </motion.div>
                         )}
 
-                        {/* Email/Password Form */}
-                        <form className="space-y-5 sm:space-y-6" onSubmit={handleEmailLogin}>
+                        <form className="space-y-5 sm:space-y-6" onSubmit={handleSubmit}>
                             <div>
                                 <label htmlFor="email" className="block text-sm font-medium text-gray-300">
                                     Email address
@@ -142,8 +184,8 @@ export default function Login() {
                                         type="email"
                                         autoComplete="email"
                                         required
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
+                                        value={formData.email}
+                                        onChange={handleInputChange}
                                         className="appearance-none block w-full px-3 py-2 border border-gray-700 rounded-md placeholder-gray-500 text-white bg-gray-900/50 focus:outline-none focus:ring-primary focus:border-primary focus:z-10 text-sm sm:text-base"
                                         placeholder="Enter your email"
                                     />
@@ -161,8 +203,8 @@ export default function Login() {
                                         type={showPassword ? 'text' : 'password'}
                                         autoComplete="current-password"
                                         required
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
+                                        value={formData.password}
+                                        onChange={handleInputChange}
                                         className="appearance-none block w-full px-3 py-2 pr-10 border border-gray-700 rounded-md placeholder-gray-500 text-white bg-gray-900/50 focus:outline-none focus:ring-primary focus:border-primary focus:z-10 text-sm sm:text-base"
                                         placeholder="Enter your password"
                                     />
@@ -185,12 +227,14 @@ export default function Login() {
                                 </div>
                             </div>
 
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div className="flex items-center justify-between">
                                 <div className="flex items-center">
                                     <input
                                         id="remember-me"
                                         name="remember-me"
                                         type="checkbox"
+                                        checked={rememberMe}
+                                        onChange={(e) => setRememberMe(e.target.checked)}
                                         className="h-4 w-4 text-primary focus:ring-primary border-gray-700 rounded bg-gray-900"
                                     />
                                     <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-400">
@@ -208,21 +252,22 @@ export default function Login() {
                             <div>
                                 <button
                                     type="submit"
-                                    disabled={loading}
+                                    disabled={loading || !formData.email || !formData.password}
                                     className="group relative w-full flex justify-center py-2.5 sm:py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-light focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary focus:ring-offset-gray-950 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {loading ? (
-                                        <svg className="animate-spin -ml-1 mr-3 h-4 w-4 sm:h-5 sm:w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                    ) : null}
-                                    {loading ? 'Signing in...' : 'Sign in'}
+                                        <>
+                                            <svg className="animate-spin -ml-1 mr-3 h-4 w-4 sm:h-5 sm:w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            Signing in...
+                                        </>
+                                    ) : 'Sign in'}
                                 </button>
                             </div>
                         </form>
 
-                        {/* Register Link */}
                         <div className="mt-5 sm:mt-6">
                             <div className="relative">
                                 <div className="absolute inset-0 flex items-center">
@@ -239,7 +284,6 @@ export default function Login() {
                             </div>
                         </div>
 
-                        {/* Google Sign In - Moved to bottom */}
                         <div className="mt-5 sm:mt-6">
                             <div className="relative mb-4">
                                 <div className="absolute inset-0 flex items-center">

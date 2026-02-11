@@ -1,6 +1,7 @@
 // src/config/firebase.js
 import { initializeApp } from 'firebase/app'
-import { getAuth, GoogleAuthProvider } from 'firebase/auth'
+import { getAuth, connectAuthEmulator } from 'firebase/auth'
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore'
 
 const firebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -11,13 +12,17 @@ const firebaseConfig = {
     appId: import.meta.env.VITE_FIREBASE_APP_ID
 }
 
-const app = initializeApp(firebaseConfig)
+// Initialize Firebase
+export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
-export const googleProvider = new GoogleAuthProvider()
+export const db = getFirestore(app)
 
-// Configure Google provider
-googleProvider.setCustomParameters({
-    prompt: 'select_account'
-})
-
-export default app
+// Connect to emulators in development
+if (import.meta.env.DEV) {
+    try {
+        connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true })
+        connectFirestoreEmulator(db, 'localhost', 8080)
+    } catch (error) {
+        console.warn('Emulators may already be connected:', error)
+    }
+}

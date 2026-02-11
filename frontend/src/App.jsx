@@ -4,6 +4,7 @@ import { lazy, Suspense } from 'react';
 
 // Eager load the home page for best initial performance
 import Home from './pages/public/Home';
+import VerifyEmail from './pages/auth/VerifyEmail'
 
 // Lazy load other pages
 const Login = lazy(() => import('./pages/auth/Login'));
@@ -64,6 +65,7 @@ export default function App() {
           {/* Redirects */}
           <Route path="/signin" element={<Navigate to="/login" replace />} />
           <Route path="/signup" element={<Navigate to="/register" replace />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
 
           {/* 404 */}
           <Route path="*" element={<NotFound />} />

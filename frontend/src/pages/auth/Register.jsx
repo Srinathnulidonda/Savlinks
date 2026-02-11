@@ -28,13 +28,9 @@ export default function Register() {
 
     useEffect(() => {
         // Check if user is already authenticated
-        const checkAuth = async () => {
-            const { session } = await AuthService.getSession()
-            if (session) {
-                navigate('/dashboard', { replace: true })
-            }
+        if (AuthService.isAuthenticated()) {
+            navigate('/dashboard', { replace: true })
         }
-        checkAuth()
     }, [navigate])
 
     useEffect(() => {
@@ -91,50 +87,51 @@ export default function Register() {
         }
 
         try {
-            const { data, error: authError } = await AuthService.register(
-                formData.email,
-                formData.password,
-                { name: formData.name }
-            )
+            const response = await AuthService.register({
+                email: formData.email,
+                password: formData.password,
+                name: formData.name
+            })
 
-            if (authError) {
-                throw new Error(authError.message)
+            if (!response.success) {
+                throw new Error(response.error?.message || 'Registration failed')
             }
 
-            if (data?.email_confirmation_required) {
-                // Email confirmation required
-                toast.success('Account created! Please check your email to confirm your account.')
-                // Create a simple email verification page or just redirect to login
-                navigate('/login', {
-                    state: {
-                        message: 'Please check your email to verify your account before logging in.',
-                        email: formData.email
-                    }
-                })
-            } else if (data?.session) {
-                // User signed up and confirmed automatically
-                toast.success('Account created successfully!')
-                navigate('/dashboard', { replace: true })
-            } else {
-                // Fallback - assume email confirmation needed
-                toast.success('Account created! Please check your email to confirm your account.')
-                navigate('/login', {
-                    state: {
-                        message: 'Please check your email to verify your account before logging in.',
-                        email: formData.email
-                    }
-                })
-            }
+            // Email verification is required for Firebase Auth
+            toast.success('Account created! Please check your email to verify your account.')
+            navigate('/verify-email', {
+                state: {
+                    email: formData.email,
+                    message: 'Please check your email to verify your account.'
+                }
+            })
         } catch (err) {
-            setError(err.message || 'Registration failed')
+            console.error('Registration error:', err)
+            setError(err.message || 'Registration failed. Please try again.')
         } finally {
             setLoading(false)
         }
     }
 
     const handleGoogleRegister = async () => {
-        // Show message that Google login is not integrated
-        toast.error('AuthService.loginWithGoogle is not fully integrated')
+        setLoading(true)
+        setError('')
+
+        try {
+            const response = await AuthService.loginWithGoogle()
+
+            if (!response.success) {
+                throw new Error(response.error?.message || 'Google sign-up failed')
+            }
+
+            toast.success('Account created successfully!')
+            navigate('/dashboard', { replace: true })
+        } catch (err) {
+            console.error('Google registration error:', err)
+            setError(err.message || 'Google sign-up failed. Please try again.')
+        } finally {
+            setLoading(false)
+        }
     }
 
     return (
@@ -402,7 +399,7 @@ export default function Register() {
                             </div>
                         </div>
 
-                        {/* Google Sign Up - Moved to bottom */}
+                        {/* Google Sign Up */}
                         <div className="mt-5 sm:mt-6">
                             <div className="relative mb-4">
                                 <div className="absolute inset-0 flex items-center">
