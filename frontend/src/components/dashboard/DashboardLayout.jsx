@@ -1,11 +1,12 @@
 // src/components/dashboard/DashboardLayout.jsx
-import React, { useState, useEffect } from 'react'; // Added React import
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
 import MobileMenu from './MobileMenu';
 import ActivityBar from './ActivityBar';
+import MobileAddButton from './header/MobileAddButton';
 
 export default function DashboardLayout({
     user,
@@ -38,7 +39,7 @@ export default function DashboardLayout({
     }, []);
 
     return (
-        <div className="flex h-screen bg-black overflow-hidden">
+        <div className="flex h-screen bg-black overflow-hidden relative">
             {/* Sidebar - Hidden on mobile */}
             {!isMobile && (
                 <Sidebar
@@ -77,6 +78,16 @@ export default function DashboardLayout({
                 {/* Activity Bar */}
                 <ActivityBar />
             </div>
+
+            {/* Mobile Add Button - Enhanced Floating Action Button */}
+            <MobileAddButton
+                onAddLink={onAddLink}
+                customPosition={{
+                    bottom: '45px',
+                    right: '24px'
+                }}
+                useSafeArea={false}
+            />
 
             {/* Mobile Menu */}
             <AnimatePresence>
