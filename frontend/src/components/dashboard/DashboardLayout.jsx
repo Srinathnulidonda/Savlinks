@@ -21,6 +21,7 @@ export default function DashboardLayout({
 }) {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [viewMode, setViewMode] = useState('grid');
+    const [activeCollection, setActiveCollection] = useState(null);
     const [collections, setCollections] = useState([
         { id: 1, name: 'Engineering', color: 'from-blue-600 to-blue-500', count: 432, emoji: '⚡' },
         { id: 2, name: 'Design', color: 'from-purple-600 to-purple-500', count: 234, emoji: '🎨' },
@@ -38,6 +39,23 @@ export default function DashboardLayout({
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
+    const handleCreateCollection = async (collectionData) => {
+        // This would typically call your collections service
+        console.log('Creating collection:', collectionData);
+
+        // Simulate API call
+        const newCollection = {
+            id: Date.now(),
+            name: collectionData.name,
+            emoji: collectionData.emoji,
+            color: collectionData.color || 'from-blue-600 to-blue-500',
+            count: 0
+        };
+
+        setCollections(prev => [...prev, newCollection]);
+        // Add your collection creation logic here
+    };
+
     return (
         <div className="flex h-screen bg-black overflow-hidden relative">
             {/* Sidebar - Hidden on mobile */}
@@ -48,7 +66,10 @@ export default function DashboardLayout({
                     activeView={activeView}
                     onViewChange={onViewChange}
                     collections={collections}
+                    activeCollection={activeCollection}
+                    onCollectionChange={setActiveCollection}
                     onOpenCommandPalette={onOpenCommandPalette}
+                    onCreateCollection={handleCreateCollection}
                 />
             )}
 
@@ -103,6 +124,12 @@ export default function DashboardLayout({
                             setIsMobileMenuOpen(false);
                         }}
                         collections={collections}
+                        activeCollection={activeCollection}
+                        onCollectionChange={(collectionId) => {
+                            setActiveCollection(collectionId);
+                            setIsMobileMenuOpen(false);
+                        }}
+                        onCreateCollection={handleCreateCollection}
                     />
                 )}
             </AnimatePresence>
