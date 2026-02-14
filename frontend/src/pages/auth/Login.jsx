@@ -18,13 +18,18 @@ export default function Login() {
     const navigate = useNavigate()
     const location = useLocation()
 
+    // Mobile detection
+    const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(navigator.userAgent);
+
     // Handle auth redirect results
     useEffect(() => {
         const handleAuthEvents = (event) => {
             if (event.type === 'auth-redirect-success') {
+                console.log('📱 Auth redirect success event received');
                 toast.success('Welcome!')
                 navigate('/dashboard', { replace: true })
             } else if (event.type === 'auth-redirect-error') {
+                console.error('📱 Auth redirect error event received');
                 setError('Google sign-in failed. Please try again.')
                 setLoading(false)
             }
@@ -39,6 +44,56 @@ export default function Login() {
         }
     }, [navigate])
 
+    // Mobile-specific auth handling
+    useEffect(() => {
+        const handleMobileAuth = () => {
+            if (isMobile) {
+                // Check for stored OAuth errors
+                const storedError = sessionStorage.getItem('oauth_error');
+                if (storedError) {
+                    try {
+                        const errorData = JSON.parse(storedError);
+                        console.error('📱 Mobile OAuth error detected:', errorData);
+                        setError('Mobile sign-in failed. Please try again.');
+                        sessionStorage.removeItem('oauth_error');
+                        setLoading(false);
+                    } catch (e) {
+                        console.warn('Failed to parse stored OAuth error');
+                    }
+                }
+
+                // Extended timeout for mobile redirects
+                const pendingAuth = sessionStorage.getItem('auth_redirect_pending');
+                const timestamp = sessionStorage.getItem('auth_redirect_timestamp');
+
+                if (pendingAuth && timestamp) {
+                    const elapsed = Date.now() - parseInt(timestamp);
+                    console.log(`📱 Mobile auth pending for ${Math.round(elapsed / 1000)}s`);
+
+                    if (elapsed > 120000) { // 2 minutes
+                        console.warn('📱 Mobile auth timeout - clearing state');
+                        sessionStorage.removeItem('auth_redirect_pending');
+                        sessionStorage.removeItem('auth_redirect_timestamp');
+                        sessionStorage.removeItem('oauth_strategy');
+                        sessionStorage.removeItem('oauth_reason');
+                        setLoading(false);
+                        setError('Authentication timed out. Please try again.');
+                    } else {
+                        // Keep loading state for mobile redirect
+                        setLoading(true);
+                        setError('');
+                    }
+                }
+            }
+        };
+
+        // Check immediately and then every 3 seconds for mobile
+        handleMobileAuth();
+        const interval = setInterval(handleMobileAuth, 3000);
+
+        return () => clearInterval(interval);
+    }, [isMobile]);
+
     // Check authentication state
     useEffect(() => {
         const checkAuth = async () => {
@@ -50,18 +105,22 @@ export default function Login() {
                 // Check if there's a pending redirect
                 const pendingRedirect = sessionStorage.getItem('auth_redirect_pending')
                 if (pendingRedirect) {
+                    console.log('📱 Found pending auth redirect, maintaining loading state');
                     // Show loading state while redirect completes
                     setLoading(true)
 
                     // Check timestamp to avoid infinite loading
                     const timestamp = sessionStorage.getItem('auth_redirect_timestamp')
-                    if (timestamp && Date.now() - parseInt(timestamp) > 60000) {
-                        // Clear stale redirect state after 1 minute
+                    if (timestamp && Date.now() - parseInt(timestamp) > 180000) { // 3 minutes
+                        console.warn('📱 Clearing stale redirect state after 3 minutes');
+                        // Clear stale redirect state after 3 minutes
                         sessionStorage.removeItem('auth_redirect_pending')
                         sessionStorage.removeItem('auth_redirect_timestamp')
+                        sessionStorage.removeItem('oauth_strategy')
+                        sessionStorage.removeItem('oauth_reason')
                         setLoading(false)
                     } else {
-                        return
+                        return // Keep loading
                     }
                 }
 
@@ -156,39 +215,57 @@ export default function Login() {
         setLoading(true)
         setError('')
 
+        console.log(`📱 Starting Google OAuth flow (Mobile: ${isMobile})`);
+
         try {
-            console.log('Starting Google OAuth flow...')
-            const response = await AuthService.loginWithGoogle()
+            const response = await AuthService.loginWithGoogle();
 
             if (response.cancelled) {
-                console.log('Google sign-in cancelled by user')
-                setLoading(false)
-                return
+                console.log('❌ Google sign-in cancelled by user');
+                setLoading(false);
+                return;
             }
 
             if (response.pending) {
-                // Redirect flow initiated
-                console.log('Google OAuth redirect initiated')
-                toast.info('Redirecting to Google...')
-                return
+                // Redirect flow initiated - keep loading state
+                console.log(`🔄 Google OAuth redirect initiated (${response.strategy})`);
+                toast.info(isMobile ? 'Opening Google sign-in...' : 'Redirecting to Google...');
+                // Don't set loading to false - wait for redirect
+                return;
             }
 
             if (!response.success) {
-                console.error('Google sign-in failed:', response.error)
-                setError(response.error?.message || 'Google sign-in failed')
-                setLoading(false)
-                return
+                console.error('❌ Google sign-in failed:', response.error);
+                setError(response.error?.message || 'Google sign-in failed');
+                setLoading(false);
+                return;
             }
 
-            toast.success(response.message || 'Welcome!')
-            const from = location.state?.from?.pathname || '/dashboard'
-            navigate(from, { replace: true })
+            // Success - popup flow completed
+            console.log(`✅ Google OAuth completed via ${response.strategy}`);
+            toast.success(response.message || 'Welcome!');
+            const from = location.state?.from?.pathname || '/dashboard';
+            navigate(from, { replace: true });
         } catch (err) {
-            console.error('Google login error:', err)
-            setError('Google sign-in failed. Please try again.')
-            setLoading(false)
+            console.error('❌ Google login error:', err);
+            setError('Google sign-in failed. Please try again.');
+            setLoading(false);
         }
     }
+
+    // Show mobile-specific loading message
+    const getLoadingMessage = () => {
+        if (!loading) return '';
+
+        const pendingAuth = sessionStorage.getItem('auth_redirect_pending');
+        const strategy = sessionStorage.getItem('oauth_strategy');
+
+        if (isMobile && pendingAuth && strategy === 'redirect') {
+            return 'Opening Google sign-in...';
+        }
+
+        return 'Signing in...';
+    };
 
     return (
         <div className="min-h-screen bg-black flex flex-col justify-center py-6 px-4 sm:py-12 sm:px-6 lg:px-8">
@@ -235,6 +312,13 @@ export default function Login() {
                     <p className="mt-2 text-sm text-gray-400">
                         Sign in to manage your links
                     </p>
+
+                    {/* Mobile debug info in development */}
+                    {process.env.NODE_ENV === 'development' && isMobile && (
+                        <p className="mt-1 text-xs text-blue-400">
+                            Mobile device detected - using redirect flow
+                        </p>
+                    )}
                 </div>
 
                 {/* Form */}
@@ -343,7 +427,7 @@ export default function Login() {
                                     className="group relative w-full flex justify-center py-2.5 sm:py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-light focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary focus:ring-offset-gray-950 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                     style={{ touchAction: 'manipulation' }}
                                 >
-                                    {loading ? (
+                                    {loading && !sessionStorage.getItem('auth_redirect_pending') ? (
                                         <>
                                             <svg className="animate-spin -ml-1 mr-3 h-4 w-4 sm:h-5 sm:w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -390,31 +474,36 @@ export default function Login() {
                                 style={{ touchAction: 'manipulation' }}
                             >
                                 {loading ? (
-                                    <svg className="animate-spin h-4 w-4 sm:h-5 sm:w-5 text-gray-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                    </svg>
+                                    <>
+                                        <svg className="animate-spin h-4 w-4 sm:h-5 sm:w-5 text-gray-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        <span>{getLoadingMessage()}</span>
+                                    </>
                                 ) : (
-                                    <svg className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 24 24">
-                                        <path
-                                            fill="#4285F4"
-                                            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                                        />
-                                        <path
-                                            fill="#34A853"
-                                            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                                        />
-                                        <path
-                                            fill="#FBBC05"
-                                            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                                        />
-                                        <path
-                                            fill="#EA4335"
-                                            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                                        />
-                                    </svg>
+                                    <>
+                                        <svg className="h-4 w-4 sm:h-5 sm:w-5" viewBox="0 0 24 24">
+                                            <path
+                                                fill="#4285F4"
+                                                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                                            />
+                                            <path
+                                                fill="#34A853"
+                                                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                                            />
+                                            <path
+                                                fill="#FBBC05"
+                                                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                                            />
+                                            <path
+                                                fill="#EA4335"
+                                                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                                            />
+                                        </svg>
+                                        <span>Continue with Google</span>
+                                    </>
                                 )}
-                                <span>{loading ? 'Signing in...' : 'Continue with Google'}</span>
                             </button>
                         </div>
                     </div>

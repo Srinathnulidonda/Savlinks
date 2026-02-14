@@ -1,4 +1,4 @@
-// src/utils/auth.js - PRODUCTION GRADE FIX WITH MOBILE OPTIMIZATION
+// src/utils/auth.js - MOBILE-OPTIMIZED OAUTH FIX
 import {
     getAuth,
     signInWithEmailAndPassword,
@@ -200,6 +200,73 @@ const safeStorage = {
     }
 }
 
+// MOBILE-FIRST OAUTH STRATEGY
+const getMobileStrategy = () => {
+    const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+
+    // Enhanced mobile detection
+    const isMobileDevice = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent);
+    const isTablet = /ipad|android(?!.*mobi)/i.test(userAgent);
+    const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+    const isSmallScreen = window.innerWidth <= 768 || window.innerHeight <= 1024;
+    const isSafariMobile = /safari/i.test(userAgent) && /mobile/i.test(userAgent) && !/chrome|crios|fxios/i.test(userAgent);
+    const isChromeMobile = /chrome/i.test(userAgent) && /mobile/i.test(userAgent);
+    const isFirefoxMobile = /firefox/i.test(userAgent) && /mobile/i.test(userAgent);
+
+    // Check for mobile-specific limitations
+    const hasLimitedStorage = !hasLocalStorage && !hasSessionStorage;
+    const isStandalone = window.matchMedia && window.matchMedia('(display-mode: standalone)').matches;
+    const isIframe = window !== window.parent;
+
+    console.log('📱 Mobile Strategy Analysis:', {
+        userAgent: userAgent.substring(0, 100),
+        isMobileDevice,
+        isTablet,
+        isTouchDevice,
+        isSmallScreen,
+        isSafariMobile,
+        isChromeMobile,
+        isFirefoxMobile,
+        hasLimitedStorage,
+        isStandalone,
+        isIframe,
+        screenSize: `${window.innerWidth}x${window.innerHeight}`,
+        touchPoints: navigator.maxTouchPoints
+    });
+
+    // FORCE redirect for ANY mobile indication
+    const shouldUseRedirect =
+        isMobileDevice ||
+        isTablet ||
+        isTouchDevice ||
+        isSmallScreen ||
+        isSafariMobile ||
+        isChromeMobile ||
+        isFirefoxMobile ||
+        hasLimitedStorage ||
+        isStandalone ||
+        isIframe ||
+        // Additional safety checks
+        window.screen.width <= 768 ||
+        /mobi|mobile|tablet|touch|android|ios/i.test(userAgent);
+
+    return {
+        shouldUseRedirect,
+        strategy: shouldUseRedirect ? 'redirect' : 'popup',
+        reason: isMobileDevice ? 'mobile_device' :
+            isTablet ? 'tablet_device' :
+                isTouchDevice ? 'touch_device' :
+                    isSmallScreen ? 'small_screen' :
+                        isSafariMobile ? 'safari_mobile' :
+                            isChromeMobile ? 'chrome_mobile' :
+                                isFirefoxMobile ? 'firefox_mobile' :
+                                    hasLimitedStorage ? 'limited_storage' :
+                                        isStandalone ? 'pwa_mode' :
+                                            isIframe ? 'iframe_context' :
+                                                'fallback_redirect'
+    };
+};
+
 // Determine the best persistence strategy
 const getBestPersistence = () => {
     // Check user preference first
@@ -269,50 +336,84 @@ const initializeAuth = async () => {
                 })
             })
 
-            // Handle redirect result with enhanced error handling
+            // Enhanced mobile redirect result handling
             try {
-                const result = await getRedirectResult(auth)
-                if (result?.user) {
-                    console.log('🔄 Redirect sign-in completed')
-                    await handleSuccessfulAuth(result.user)
+                console.log('🔍 Checking for redirect result...');
+                const result = await getRedirectResult(auth);
 
-                    // Clear redirect state
+                if (result?.user) {
+                    console.log('✅ Redirect sign-in completed successfully');
+                    console.log('👤 User:', result.user.email);
+
+                    await handleSuccessfulAuth(result.user);
+
+                    // Clear ALL redirect state
                     if (hasSessionStorage) {
-                        sessionStorage.removeItem('auth_redirect_pending')
-                        sessionStorage.removeItem('auth_redirect_timestamp')
+                        const strategy = sessionStorage.getItem('oauth_strategy');
+                        const reason = sessionStorage.getItem('oauth_reason');
+
+                        console.log(`📱 OAuth completed via ${strategy} (reason: ${reason})`);
+
+                        sessionStorage.removeItem('auth_redirect_pending');
+                        sessionStorage.removeItem('auth_redirect_timestamp');
+                        sessionStorage.removeItem('oauth_strategy');
+                        sessionStorage.removeItem('oauth_reason');
+                        sessionStorage.removeItem('oauth_error');
                     }
 
-                    // Dispatch success event for mobile handling
+                    // Dispatch success event with mobile info
+                    const isMobile = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(navigator.userAgent);
                     window.dispatchEvent(new CustomEvent('auth-redirect-success', {
                         detail: {
                             user: currentUser,
-                            isMobile: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+                            isMobile,
+                            timestamp: Date.now()
                         }
-                    }))
+                    }));
+                } else {
+                    // Check for error state
+                    if (hasSessionStorage) {
+                        const pendingAuth = sessionStorage.getItem('auth_redirect_pending');
+                        const errorState = sessionStorage.getItem('oauth_error');
+
+                        if (pendingAuth && !errorState) {
+                            // Still waiting for redirect
+                            console.log('⏳ Redirect authentication pending...');
+                        } else if (errorState) {
+                            console.error('❌ Stored OAuth error:', errorState);
+                            // Clean up error state
+                            sessionStorage.removeItem('oauth_error');
+                        }
+                    }
                 }
             } catch (redirectError) {
-                console.error('Redirect error:', redirectError)
+                console.error('❌ Redirect error:', redirectError);
 
-                // Clear redirect state on any error
-                if (hasSessionStorage) {
-                    sessionStorage.removeItem('auth_redirect_pending')
-                    sessionStorage.removeItem('auth_redirect_timestamp')
-                }
-
-                // Handle specific mobile-related errors
+                // Enhanced error handling for mobile
                 if (redirectError.code === 'auth/missing-initial-state' ||
                     redirectError.code === 'auth/web-storage-unsupported') {
-                    console.warn('⚠️ Mobile redirect state issue, checking current auth')
+                    console.warn('⚠️ Mobile redirect state issue detected');
 
-                    // Give Firebase more time to restore auth state on mobile
-                    await new Promise(resolve => setTimeout(resolve, 3000))
+                    // Give more time for mobile devices
+                    await new Promise(resolve => setTimeout(resolve, 5000));
 
                     if (auth.currentUser) {
-                        console.log('✅ Found authenticated user after delay')
-                        await handleSuccessfulAuth(auth.currentUser)
+                        console.log('✅ Found authenticated user after extended wait');
+                        await handleSuccessfulAuth(auth.currentUser);
                     }
                 } else if (redirectError.code !== 'auth/no-auth-event') {
-                    console.error('Unexpected redirect error:', redirectError)
+                    console.error('Unexpected redirect error:', redirectError);
+                }
+
+                // Clean up state on any error
+                if (hasSessionStorage) {
+                    sessionStorage.removeItem('auth_redirect_pending');
+                    sessionStorage.removeItem('auth_redirect_timestamp');
+                    sessionStorage.setItem('oauth_error', JSON.stringify({
+                        code: redirectError.code,
+                        message: redirectError.message,
+                        timestamp: Date.now()
+                    }));
                 }
             }
 
@@ -636,81 +737,76 @@ export const AuthService = {
                 console.warn('Failed to set persistence for Google login')
             }
 
-            // ENHANCED: Mobile detection and OAuth strategy
-            const isMobile = /iPhone|iPad|iPod|Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-            const isTablet = /iPad|Android.*(?=.*Tablet)|(?=.*Android)(?=.*(?:Nexus [7-9]|Nexus 10))/i.test(navigator.userAgent)
-            const isMobileBrowser = isMobile || isTablet
-            const hasStorageIssues = !hasSessionStorage || !hasLocalStorage
-            const isIframe = window !== window.parent
-            const isPrivateBrowsing = !hasLocalStorage && hasSessionStorage
-            const isSafariMobile = /iPhone|iPad|iPod/.test(navigator.userAgent) && /Safari/.test(navigator.userAgent) && !/CriOS|FxiOS/.test(navigator.userAgent)
+            // Get mobile strategy
+            const mobileStrategy = getMobileStrategy();
+            const shouldUseRedirect = forceRedirect || mobileStrategy.shouldUseRedirect;
 
-            // Check for COOP issues more thoroughly
-            let hasCOOPIssues = false
-            try {
-                // Test if we can access window properties that COOP would block
-                hasCOOPIssues = window.crossOriginIsolated === true
-            } catch (e) {
-                // Can't detect, assume false
-            }
-
-            // Enhanced mobile detection for OAuth strategy
-            const shouldUseRedirect = forceRedirect ||
-                isMobileBrowser ||
-                hasStorageIssues ||
-                isIframe ||
-                hasCOOPIssues ||
-                isPrivateBrowsing ||
-                isSafariMobile ||
-                // Force redirect if viewport is mobile-sized
-                (window.innerWidth <= 768 && window.innerHeight <= 1024)
-
-            console.log('OAuth Strategy Decision:', {
-                isMobile: isMobileBrowser,
-                shouldUseRedirect,
-                viewportSize: `${window.innerWidth}x${window.innerHeight}`,
-                userAgent: navigator.userAgent.substring(0, 50) + '...',
-                reason: isMobileBrowser ? 'mobile_device' :
-                    hasCOOPIssues ? 'coop_policy' :
-                        hasStorageIssues ? 'storage_issues' :
-                            isIframe ? 'iframe_context' :
-                                'default'
-            })
+            console.log('🔐 OAuth Strategy Decision:', {
+                forceRedirect,
+                mobileStrategy,
+                finalDecision: shouldUseRedirect ? 'REDIRECT' : 'POPUP'
+            });
 
             if (shouldUseRedirect) {
-                console.log('Using redirect flow for Google sign-in (Mobile optimized)')
+                console.log('🔄 Using REDIRECT flow for Google sign-in');
+                console.log(`📱 Reason: ${mobileStrategy.reason}`);
+
+                // Clear any existing state
+                if (hasSessionStorage) {
+                    sessionStorage.removeItem('auth_redirect_pending');
+                    sessionStorage.removeItem('auth_redirect_timestamp');
+                    sessionStorage.removeItem('oauth_error');
+                }
 
                 // Store state for redirect handling
                 if (hasSessionStorage) {
-                    sessionStorage.setItem('auth_redirect_pending', 'true')
-                    sessionStorage.setItem('auth_redirect_timestamp', Date.now().toString())
+                    sessionStorage.setItem('auth_redirect_pending', 'true');
+                    sessionStorage.setItem('auth_redirect_timestamp', Date.now().toString());
+                    sessionStorage.setItem('oauth_strategy', 'redirect');
+                    sessionStorage.setItem('oauth_reason', mobileStrategy.reason);
                 }
 
-                // Configure provider for redirect
+                // Configure provider for mobile redirect
                 googleProvider.setCustomParameters({
                     prompt: 'select_account',
-                    display: isMobileBrowser ? 'touch' : 'popup'
-                })
+                    // Remove display parameter to let Firebase handle it
+                });
 
-                await signInWithRedirect(auth, googleProvider)
-                return {
-                    success: true,
-                    pending: true,
-                    message: 'Redirecting to Google...'
+                try {
+                    await signInWithRedirect(auth, googleProvider);
+
+                    return {
+                        success: true,
+                        pending: true,
+                        message: 'Redirecting to Google...',
+                        strategy: 'redirect'
+                    };
+                } catch (redirectError) {
+                    console.error('❌ Redirect failed:', redirectError);
+
+                    // Clean up state
+                    if (hasSessionStorage) {
+                        sessionStorage.setItem('oauth_error', JSON.stringify({
+                            code: redirectError.code,
+                            message: redirectError.message
+                        }));
+                    }
+
+                    throw redirectError;
                 }
             }
 
-            // Try popup with enhanced mobile handling
+            // Desktop popup flow (should rarely be used now)
             try {
+                console.log('🖥️ Using POPUP flow for Google sign-in');
+
                 // Configure provider for popup
                 googleProvider.setCustomParameters({
-                    prompt: 'select_account',
-                    display: 'popup'
-                })
+                    prompt: 'select_account'
+                });
 
-                console.log('Attempting popup flow...')
-                const userCredential = await signInWithPopup(auth, googleProvider)
-                const userData = await handleSuccessfulAuth(userCredential.user)
+                const userCredential = await signInWithPopup(auth, googleProvider);
+                const userData = await handleSuccessfulAuth(userCredential.user);
 
                 return {
                     success: true,
@@ -718,45 +814,45 @@ export const AuthService = {
                         user: userData,
                         token: await userCredential.user.getIdToken()
                     },
-                    message: 'Welcome!'
-                }
+                    message: 'Welcome!',
+                    strategy: 'popup'
+                };
             } catch (popupError) {
-                console.warn('Popup failed:', popupError.code, popupError.message)
+                console.warn('⚠️ Popup failed, falling back to redirect:', popupError);
 
-                // Enhanced popup error handling
+                // Any popup failure on mobile should redirect
                 if (popupError.code === 'auth/popup-blocked' ||
                     popupError.code === 'auth/cancelled-popup-request' ||
                     popupError.code === 'auth/popup-closed-by-user' ||
                     popupError.message.includes('popup') ||
-                    popupError.message.includes('window.closed') ||
                     popupError.message.includes('Cross-Origin-Opener-Policy')) {
 
                     if (popupError.code === 'auth/popup-closed-by-user') {
-                        return { success: false, cancelled: true }
+                        return { success: false, cancelled: true };
                     }
 
-                    console.log('Popup blocked or failed, falling back to redirect')
-                    return this.loginWithGoogle(true) // Force redirect
+                    console.log('🔄 Popup blocked, forcing redirect flow');
+                    return this.loginWithGoogle(true);
                 }
 
-                throw popupError
+                throw popupError;
             }
         } catch (error) {
-            console.error('Google login error:', error)
+            console.error('❌ Google login error:', error);
 
+            // Handle cancelled cases
             if (error.code === 'auth/popup-closed-by-user' ||
                 error.code === 'auth/cancelled-popup-request') {
-                return { success: false, cancelled: true }
+                return { success: false, cancelled: true };
             }
 
-            // If it's a COOP or security error, try redirect
-            if (error.message && (
-                error.message.includes('Cross-Origin-Opener-Policy') ||
-                error.message.includes('window.closed') ||
-                error.message.includes('popup') ||
-                error.message.includes('SecurityError'))) {
-                console.log('Security policy blocking popup, using redirect')
-                return this.loginWithGoogle(true)
+            // Store error for debugging
+            if (hasSessionStorage) {
+                sessionStorage.setItem('oauth_error', JSON.stringify({
+                    code: error.code,
+                    message: error.message,
+                    timestamp: Date.now()
+                }));
             }
 
             return {
@@ -765,7 +861,7 @@ export const AuthService = {
                     code: error.code,
                     message: this.getErrorMessage(error.code)
                 }
-            }
+            };
         }
     },
 
@@ -920,8 +1016,7 @@ export const AuthService = {
                 local: hasLocalStorage,
                 session: hasSessionStorage
             },
-            isMobile: /iPhone|iPad|iPod|Android/i.test(navigator.userAgent),
-            viewport: `${window.innerWidth}x${window.innerHeight}`
+            mobileStrategy: getMobileStrategy()
         }
 
         console.log('🔍 Auth Debug Info:', debugInfo)
@@ -958,7 +1053,8 @@ if (typeof window !== 'undefined') {
     window.SavlinkAuth = {
         debugAuthState: AuthService.debugAuthState,
         getCurrentUser: AuthService.getCurrentUser,
-        getFirebaseUser: AuthService.getFirebaseUser
+        getFirebaseUser: AuthService.getFirebaseUser,
+        getMobileStrategy
     }
 }
 
